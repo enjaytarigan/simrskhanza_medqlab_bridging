@@ -95,10 +95,6 @@ func (s *Service) ProcessEnvelope(ctx context.Context, env *Envelope, rawJSON []
 	start := time.Now()
 	log.Printf("[medqlab] ========== ProcessEnvelope START ==========")
 
-	if s.nip == "" {
-		log.Printf("[medqlab] FAIL: MEDQLAB_BRIDGING_NIP is empty")
-		return nil, ErrNIPRequired
-	}
 	if env == nil || env.Response == nil {
 		log.Printf("[medqlab] FAIL: missing response")
 		return nil, fmt.Errorf("missing response")
@@ -125,7 +121,7 @@ func (s *Service) ProcessEnvelope(ctx context.Context, env *Envelope, rawJSON []
 		return nil, ErrNoRawatRequired
 	}
 
-	log.Printf("[medqlab] step=identify medqlab_order=%q no_laboratorium=%q no_rawat=%q nip=%q payload_bytes=%d",
+	log.Printf("[medqlab] step=identify medqlab_order=%q no_laboratorium=%q no_rawat=%q fallback_nip=%q payload_bytes=%d",
 		medqlabOrder, noLab, noRawat, s.nip, len(rawJSON))
 
 	inboxID, err := s.insertInbox(ctx, medqlabOrder, noLab, rawJSON)
@@ -248,6 +244,13 @@ func (s *Service) process(ctx context.Context, medqlabOrder, noLab, noRawat stri
 	}
 	log.Printf("[medqlab] step=exam_datetime tgl=%s jam=%s source=max_validatedAt timezone=%s", tgl, jam, s.loc)
 
+	nip, nipSource := s.resolveVerifyNIP(mapped)
+	if nip == "" {
+		log.Printf("[medqlab] FAIL: no idEmployeeVerify on mapped leaves and MEDQLAB_BRIDGING_NIP is empty")
+		return nil, ErrNIPRequired
+	}
+	log.Printf("[medqlab] step=resolve_nip nip=%q source=%s", nip, nipSource)
+
 	tglSampel, jamSampel := "", ""
 	if resp.Demographics != nil {
 		tglSampel, jamSampel = s.parseCollectDate(resp.Demographics.CollectDate)
@@ -279,7 +282,7 @@ func (s *Service) process(ctx context.Context, medqlabOrder, noLab, noRawat stri
 	}
 
 	log.Printf("[medqlab] step=write_simrs BEGIN noorder=%q no_rawat=%q rows=%d", noOrder, perm.NoRawat, len(mapped))
-	panelsWritten, detailWritten, err := s.writeSIMRS(ctx, perm, mapped, tgl, jam, tglSampel, jamSampel, pj, kesan)
+	panelsWritten, detailWritten, err := s.writeSIMRS(ctx, perm, mapped, tgl, jam, tglSampel, jamSampel, nip, pj, kesan)
 	if err != nil {
 		log.Printf("[medqlab] step=write_simrs FAIL: %v", err)
 		return nil, err
@@ -326,6 +329,36 @@ func (s *Service) resolveExamDateTime(mapped []mappedRow) (tgl, jam string, err 
 	return local.Format("2006-01-02"), local.Format("15:04:05"), nil
 }
 
+// resolveVerifyNIP picks idEmployeeVerify from the mapped leaf with the latest verifiedAt.
+// Falls back to MEDQLAB_BRIDGING_NIP (s.nip) when verify employee id is absent.
+func (s *Service) resolveVerifyNIP(mapped []mappedRow) (nip, source string) {
+	var latest time.Time
+	var fromVerify string
+	found := false
+	for _, m := range mapped {
+		if m.Leaf.VerifiedAt == "" {
+			continue
+		}
+		t, parseErr := parseMedQLabTime(m.Leaf.VerifiedAt, s.loc)
+		if parseErr != nil {
+			log.Printf("[medqlab] step=resolve_nip skip verifiedAt=%q err=%v", m.Leaf.VerifiedAt, parseErr)
+			continue
+		}
+		if !found || t.After(latest) {
+			found = true
+			latest = t
+			fromVerify = strings.TrimSpace(m.Leaf.IdEmployeeVerify)
+		}
+	}
+	if fromVerify != "" {
+		return fromVerify, "idEmployeeVerify"
+	}
+	if fallback := strings.TrimSpace(s.nip); fallback != "" {
+		return fallback, "env"
+	}
+	return "", ""
+}
+
 // parseCollectDate maps MedQLab demographics.collectDate → permintaan_lab tgl_sampel/jam_sampel.
 func (s *Service) parseCollectDate(raw string) (tgl, jam string) {
 	return parseCollectDateIn(raw, s.loc)
@@ -366,7 +399,7 @@ func parseMedQLabTime(raw string, loc *time.Location) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("unsupported datetime: %q", raw)
 }
 
-func (s *Service) writeSIMRS(ctx context.Context, perm *permintaanLab, mapped []mappedRow, tgl, jam, tglSampel, jamSampel, pj, kesan string) (panelsWritten, detailWritten int, err error) {
+func (s *Service) writeSIMRS(ctx context.Context, perm *permintaanLab, mapped []mappedRow, tgl, jam, tglSampel, jamSampel, nip, pj, kesan string) (panelsWritten, detailWritten int, err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, 0, err
@@ -395,7 +428,7 @@ UPDATE permintaan_lab SET tgl_hasil=?, jam_hasil=? WHERE noorder=?`,
 	for _, m := range mapped {
 		panelSet[m.KdJenisPrw] = struct{}{}
 	}
-	log.Printf("[medqlab]   unique_panels=%d status_label=%s pj=%s nip=%s", len(panelSet), statusLabel, pj, s.nip)
+	log.Printf("[medqlab]   unique_panels=%d status_label=%s pj=%s nip=%s", len(panelSet), statusLabel, pj, nip)
 
 	for kd := range panelSet {
 		exists, err := periksaLabExists(ctx, tx, perm.NoRawat, kd, tgl, jam)
@@ -417,7 +450,7 @@ INSERT INTO periksa_lab (
   bagian_rs, bhp, tarif_perujuk, tarif_tindakan_dokter, tarif_tindakan_petugas,
   kso, menejemen, biaya, kd_dokter, status, kategori
 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'PK')`,
-			perm.NoRawat, s.nip, kd, tgl, jam, perm.DokterPerujuk,
+			perm.NoRawat, nip, kd, tgl, jam, perm.DokterPerujuk,
 			tariff.BagianRS, tariff.BHP, tariff.TarifPerujuk, tariff.TarifTindakanDokter, tariff.TarifTindakanPetugas,
 			tariff.KSO, tariff.Menejemen, tariff.TotalByr, pj, statusLabel,
 		); err != nil {

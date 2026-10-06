@@ -152,7 +152,7 @@ DATABASE_DSN=spv:server@tcp(192.168.1.10:3306)/sik?parseTime=true&loc=Local&char
 | `AUTH_USERNAME` | Ya | — | Username HTTP Basic Auth (UI + API mapping) |
 | `AUTH_PASSWORD` | Ya | — | Password HTTP Basic Auth |
 | `MEDQLAB_WEBHOOK_API_KEY` | Untuk push hasil | — | API key `POST /api/v1/medqlab/hasil`. Jika kosong → HTTP 503 |
-| `MEDQLAB_BRIDGING_NIP` | Untuk push hasil | — | NIP ditulis ke `periksa_lab.nip` |
+| `MEDQLAB_BRIDGING_NIP` | Fallback | — | NIP untuk `periksa_lab.nip` jika payload tidak punya `idEmployeeVerify` |
 | `APP_LISTEN` | Tidak | `:8080` | Bind di dalam container (gunakan `:8080`) |
 | `APP_PORT` | Tidak | `8080` | Port yang dipublish ke host |
 | `APP_ENV` | Tidak | `production` | Tetap `production` di server produksi |

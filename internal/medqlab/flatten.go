@@ -38,18 +38,21 @@ func mapLeaf(exam Examination) *LeafResult {
 	}
 	ket := strings.TrimSpace(strPtr(exam.ExamValueFlag))
 	validated := strings.TrimSpace(strPtr(exam.ValidatedAt))
+	verified := strings.TrimSpace(strPtr(exam.VerifiedAt))
 	if validated == "" {
-		validated = strings.TrimSpace(strPtr(exam.VerifiedAt))
+		validated = verified
 	}
 	return &LeafResult{
-		LisTestID:    strings.TrimSpace(exam.TestID.String()),
-		LocalCode:    strings.TrimSpace(strPtr(exam.LocalCode)),
-		TestName:     strings.TrimSpace(exam.TestName),
-		Position:     pos,
-		Nilai:        nilai,
-		Keterangan:   ket,
-		NilaiRujukan: strings.TrimSpace(strPtr(exam.NormalValueText)),
-		ValidatedAt:  validated,
+		LisTestID:        strings.TrimSpace(exam.TestID.String()),
+		LocalCode:        strings.TrimSpace(strPtr(exam.LocalCode)),
+		TestName:         strings.TrimSpace(exam.TestName),
+		Position:         pos,
+		Nilai:            nilai,
+		Keterangan:       ket,
+		NilaiRujukan:     strings.TrimSpace(strPtr(exam.NormalValueText)),
+		ValidatedAt:      validated,
+		VerifiedAt:       verified,
+		IdEmployeeVerify: strings.TrimSpace(strPtr(exam.IdEmployeeVerify)),
 	}
 }
 

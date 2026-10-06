@@ -10,7 +10,7 @@ It also exposes an API so **MedQLab can push lab results** into SIMRS exam table
 ```bash
 cp .env.example .env
 # Edit DATABASE_DSN (SIMRS MySQL), AUTH_USERNAME, AUTH_PASSWORD
-# For MedQLab push: also set MEDQLAB_WEBHOOK_API_KEY and MEDQLAB_BRIDGING_NIP
+# For MedQLab push: set MEDQLAB_WEBHOOK_API_KEY; MEDQLAB_BRIDGING_NIP is fallback NIP only
 ./scripts/deploy.sh
 ```
 
@@ -66,7 +66,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
 | `AUTH_USERNAME` | Yes | HTTP Basic user (UI + mapping API) |
 | `AUTH_PASSWORD` | Yes | HTTP Basic password |
 | `MEDQLAB_WEBHOOK_API_KEY` | For MedQLab push | API key for `POST /api/v1/medqlab/hasil` |
-| `MEDQLAB_BRIDGING_NIP` | For MedQLab push | NIP stored on `periksa_lab.nip` |
+| `MEDQLAB_BRIDGING_NIP` | Fallback | Used for `periksa_lab.nip` only when payload has no `idEmployeeVerify` on verified leaves |
 | `APP_LISTEN` | No | Default `:8080` (use `:8080` in Docker) |
 | `APP_PORT` | No | Host port published by Compose (default `8080`) |
 | `APP_ENV` | No | `development` or `production` (default `production`) |
@@ -111,9 +111,9 @@ X-API-Key: <MEDQLAB_WEBHOOK_API_KEY>
 
 Also accepted: `Authorization: Bearer <MEDQLAB_WEBHOOK_API_KEY>`.
 
-On success the service resolves the SIMRS order, maps examinations via `lis_mapping_tests`, and writes `periksa_lab` / `detail_periksa_lab` / `saran_kesan_lab` (no journal). It also updates `permintaan_lab.tgl_hasil` / `jam_hasil`, and when MedQLab sends `demographics.collectDate`, updates `tgl_sampel` / `jam_sampel`. Audit rows go to `lis_hasil_inbox` (visible under **Log Bridging**).
+On success the service resolves the SIMRS order, maps examinations via `lis_mapping_tests`, and writes `periksa_lab` / `detail_periksa_lab` / `saran_kesan_lab` (no journal). It also updates `permintaan_lab.tgl_hasil` / `jam_hasil`, and when MedQLab sends `demographics.collectDate`, updates `tgl_sampel` / `jam_sampel`. `periksa_lab.nip` comes from the latest leaf `idEmployeeVerify` (by `verifiedAt`), falling back to `MEDQLAB_BRIDGING_NIP`. Audit rows go to `lis_hasil_inbox` (visible under **Log Bridging**).
 
-Requires `MEDQLAB_WEBHOOK_API_KEY` and `MEDQLAB_BRIDGING_NIP` in `.env`.
+Requires `MEDQLAB_WEBHOOK_API_KEY` in `.env`. NIP is required from payload verify employee id or `MEDQLAB_BRIDGING_NIP` fallback.
 
 ## Tables
 

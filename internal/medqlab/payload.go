@@ -65,19 +65,22 @@ type Examination struct {
 	ValidatedAt          *string       `json:"validatedAt"`
 	VerifiedAt           *string       `json:"verifiedAt"`
 	ValidatedUsername    *string       `json:"validatedUsername"`
+	IdEmployeeVerify     *string       `json:"idEmployeeVerify"`
 	Children             []Examination `json:"children"`
 }
 
 // LeafResult is a flattened analyte row ready for SIMRS mapping.
 type LeafResult struct {
-	LisTestID    string
-	LocalCode    string
-	TestName     string
-	Position     string
-	Nilai        string
-	Keterangan   string
-	NilaiRujukan string
-	ValidatedAt  string
+	LisTestID        string
+	LocalCode        string
+	TestName         string
+	Position         string
+	Nilai            string
+	Keterangan       string
+	NilaiRujukan     string
+	ValidatedAt      string
+	VerifiedAt       string
+	IdEmployeeVerify string
 }
 
 func strPtr(p *string) string {
