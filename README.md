@@ -2,7 +2,7 @@
 
 Standalone Go web app to map **LIS tests** (`lis_tests`) to **SIMRS Khanza** lab templates (`template_laboratorium.id_template`). Uses the same MySQL database as SIMRS.
 
-It also exposes an API so **MedQLab can push lab results** into SIMRS exam tables (no accounting journal).
+It also exposes an API so **MedQLab can push lab results** into SIMRS exam tables and posts the matching lab accounting journal (same pattern as Khanza / AdamLabs).
 
 
 ## Quick start (Docker)
@@ -111,7 +111,7 @@ X-API-Key: <MEDQLAB_WEBHOOK_API_KEY>
 
 Also accepted: `Authorization: Bearer <MEDQLAB_WEBHOOK_API_KEY>`.
 
-On success the service resolves the SIMRS order, maps examinations via `lis_mapping_tests`, and writes `periksa_lab` / `detail_periksa_lab` / `saran_kesan_lab` (no journal). It also updates `permintaan_lab.tgl_hasil` / `jam_hasil`, and when MedQLab sends `demographics.collectDate`, updates `tgl_sampel` / `jam_sampel`. `periksa_lab.nip` comes from the latest leaf `idEmployeeVerify` (by `verifiedAt`), falling back to `MEDQLAB_BRIDGING_NIP`. Audit rows go to `lis_hasil_inbox` (visible under **Log Bridging**).
+On success the service resolves the SIMRS order, maps examinations via `lis_mapping_tests`, and writes `periksa_lab` / `detail_periksa_lab` / `saran_kesan_lab`. Tarif/biaya on those rows is copied from SIMRS masters (`jns_perawatan_lab` → panel, `template_laboratorium` → detail), including on re-push UPDATE — not from MedQLab. For **new INSERT** rows only, tariff totals are posted to `jurnal` / `detailjurnal` using Chart of Accounts from `set_akun_ralan` or `set_akun_ranap` (by order status). Re-push UPDATE / skipped panels do not create another journal. It also updates `permintaan_lab.tgl_hasil` / `jam_hasil`, and when MedQLab sends `demographics.collectDate`, updates `tgl_sampel` / `jam_sampel`. `periksa_lab.nip` comes from the latest leaf `idEmployeeVerify` (by `verifiedAt`), falling back to `MEDQLAB_BRIDGING_NIP`. Audit rows go to `lis_hasil_inbox` (visible under **Log Bridging**).
 
 Requires `MEDQLAB_WEBHOOK_API_KEY` in `.env`. NIP is required from payload verify employee id or `MEDQLAB_BRIDGING_NIP` fallback.
 
@@ -123,7 +123,7 @@ Created on app startup (if missing):
 - `lis_mapping_tests` — links `lis_tests.id` → `id_template`, with `kd_jenis_prw` from `template_laboratorium`
 - `lis_hasil_inbox` — push audit (payload + post status)
 
-SIMRS tables used for hasil write (must already exist): `permintaan_lab`, `periksa_lab`, `detail_periksa_lab`, `saran_kesan_lab`, `reg_periksa`, `template_laboratorium`, `jns_perawatan_lab`.
+SIMRS tables used for hasil write (must already exist): `permintaan_lab`, `periksa_lab`, `detail_periksa_lab`, `saran_kesan_lab`, `reg_periksa`, `template_laboratorium`, `jns_perawatan_lab`, `set_akun_ralan`, `set_akun_ranap`, `jurnal`, `detailjurnal`.
 
 ## Integration (SIMRS Java)
 

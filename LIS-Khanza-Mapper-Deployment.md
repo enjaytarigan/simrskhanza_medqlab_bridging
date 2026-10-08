@@ -11,7 +11,7 @@ Repositori: [https://github.com/enjaytarigan/lis-khanza-mapper](https://github.c
 LIS Khanza Mapper adalah aplikasi web Go yang:
 
 1. Memetakan tes laboratorium dari **LIS** ke template laboratorium **SIMRS Khanza** (`template_laboratorium`)
-2. Menyediakan API agar **MedQLab dapat push hasil lab** ke SIMRS (`periksa_lab`, `detail_periksa_lab`, `saran_kesan_lab`) — tanpa posting jurnal akuntansi
+2. Menyediakan API agar **MedQLab dapat push hasil lab** ke SIMRS (`periksa_lab`, `detail_periksa_lab`, `saran_kesan_lab`) dan mencatat jurnal akuntansi (`jurnal` / `detailjurnal`) dari tarif INSERT baru, memakai COA `set_akun_ralan` / `set_akun_ranap`
 
 Aplikasi menggunakan **database MySQL/MariaDB produksi SIMRS** yang sudah berjalan di rumah sakit.
 
@@ -203,9 +203,10 @@ docker compose up -d --build
 
 | Hak | Objek |
 |-----|--------|
-| **SELECT** | `template_laboratorium`, `jns_perawatan_lab`, `permintaan_lab`, `reg_periksa` |
+| **SELECT** | `template_laboratorium`, `jns_perawatan_lab`, `permintaan_lab`, `reg_periksa`, `set_akun_ralan`, `set_akun_ranap` |
 | **CREATE / ALTER / INSERT / UPDATE / SELECT** | `lis_tests`, `lis_mapping_tests`, `lis_hasil_inbox` |
 | **INSERT / UPDATE / SELECT** | `periksa_lab`, `detail_periksa_lab`, `saran_kesan_lab` |
+| **INSERT / SELECT** | `jurnal`, `detailjurnal` |
 | **UPDATE** | `permintaan_lab` (kolom `tgl_hasil` / `jam_hasil`; plus `tgl_sampel` / `jam_sampel` jika ada `collectDate`) |
 
 2. Mapping LIS ↔ template dikelola lewat UI; hasil lab ditulis otomatis saat MedQLab push ke API.
