@@ -90,7 +90,8 @@ type templateTariff struct {
 }
 
 // ProcessEnvelope validates, maps, and writes MedQLab results into SIMRS
-// (periksa_lab, detail_periksa_lab, saran_kesan_lab). Does not post journal.
+// (periksa_lab, detail_periksa_lab, saran_kesan_lab) and posts lab journal
+// for newly inserted tariff rows (mirrors Khanza / AdamLabs).
 func (s *Service) ProcessEnvelope(ctx context.Context, env *Envelope, rawJSON []byte) (*ProcessResult, error) {
 	start := time.Now()
 	log.Printf("[medqlab] ========== ProcessEnvelope START ==========")
@@ -430,6 +431,8 @@ UPDATE permintaan_lab SET tgl_hasil=?, jam_hasil=? WHERE noorder=?`,
 	}
 	log.Printf("[medqlab]   unique_panels=%d status_label=%s pj=%s nip=%s", len(panelSet), statusLabel, pj, nip)
 
+	var totals journalTotals
+
 	for kd := range panelSet {
 		exists, err := periksaLabExists(ctx, tx, perm.NoRawat, kd, tgl, jam)
 		if err != nil {
@@ -456,6 +459,7 @@ INSERT INTO periksa_lab (
 		); err != nil {
 			return 0, 0, fmt.Errorf("insert periksa_lab %s: %w", kd, err)
 		}
+		totals.addPanel(tariff)
 		panelsWritten++
 		log.Printf("[medqlab]   db=periksa_lab INSERT kd_jenis_prw=%s biaya=%.2f dokter_perujuk=%s",
 			kd, tariff.TotalByr, perm.DokterPerujuk)
@@ -475,6 +479,9 @@ INSERT INTO periksa_lab (
 		if err != nil {
 			return 0, 0, err
 		}
+		if action == "INSERT" {
+			totals.addDetail(tpl)
+		}
 		if action != "" {
 			detailWritten++
 			log.Printf("[medqlab]   db=detail_periksa_lab %s id_template=%d kd=%s testId=%s name=%q nilai=%q ket=%q",
@@ -490,12 +497,24 @@ INSERT INTO periksa_lab (
 		log.Printf("[medqlab]   db=saran_kesan_lab %s no_rawat=%s", kesanAction, perm.NoRawat)
 	}
 
+	if err := postLabJurnal(ctx, tx, perm.NoRawat, nip, perm.Status, totals, time.Now().In(s.loc)); err != nil {
+		return 0, 0, err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return 0, 0, err
 	}
 	log.Printf("[medqlab]   db=COMMIT OK")
 	return panelsWritten, detailWritten, nil
 }
+
+// upsertDetailUpdateSQL refreshes hasil and tariff columns from template_laboratorium
+// (mirrors DlgPeriksaLaboratorium simpanlab on re-push).
+const upsertDetailUpdateSQL = `
+UPDATE detail_periksa_lab SET nilai=?, nilai_rujukan=?, keterangan=?,
+  bagian_rs=?, bhp=?, bagian_perujuk=?, bagian_dokter=?, bagian_laborat=?,
+  kso=?, menejemen=?, biaya_item=?
+WHERE no_rawat=? AND kd_jenis_prw=? AND tgl_periksa=? AND jam=? AND id_template=?`
 
 func upsertDetail(ctx context.Context, tx *sql.Tx, noRawat, kd, tgl, jam string, idTpl int,
 	nilai, rujukan, ket string, tpl templateTariff) (action string, err error) {
@@ -508,10 +527,11 @@ WHERE no_rawat=? AND kd_jenis_prw=? AND tgl_periksa=? AND jam=? AND id_template=
 		return "", err
 	}
 	if n > 0 {
-		_, err = tx.ExecContext(ctx, `
-UPDATE detail_periksa_lab SET nilai=?, nilai_rujukan=?, keterangan=?
-WHERE no_rawat=? AND kd_jenis_prw=? AND tgl_periksa=? AND jam=? AND id_template=?`,
-			nilai, rujukan, ket, noRawat, kd, tgl, jam, idTpl)
+		_, err = tx.ExecContext(ctx, upsertDetailUpdateSQL,
+			nilai, rujukan, ket,
+			tpl.BagianRS, tpl.BHP, tpl.BagianPerujuk, tpl.BagianDokter, tpl.BagianLaborat,
+			tpl.KSO, tpl.Menejemen, tpl.BiayaItem,
+			noRawat, kd, tgl, jam, idTpl)
 		if err != nil {
 			return "", err
 		}
