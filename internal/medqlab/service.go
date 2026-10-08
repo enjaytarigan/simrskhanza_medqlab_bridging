@@ -434,18 +434,31 @@ UPDATE permintaan_lab SET tgl_hasil=?, jam_hasil=? WHERE noorder=?`,
 	var totals journalTotals
 
 	for kd := range panelSet {
+		panel, err := loadPanelTariff(ctx, tx, kd)
+		if err != nil {
+			return 0, 0, fmt.Errorf("jns_perawatan_lab %s: %w", kd, err)
+		}
+		items, err := loadOrderedTemplateTariffs(ctx, tx, perm.NoOrder, kd)
+		if err != nil {
+			return 0, 0, fmt.Errorf("ordered templates %s: %w", kd, err)
+		}
+		tariff := resolvePanelTariff(panel, items)
+		if panel.TotalByr <= 0 && tariff.TotalByr > 0 {
+			log.Printf("[medqlab]   tarif_resolve kd=%s mode=template_rollup biaya=%.2f (panel_total_byr=0 items=%d)",
+				kd, tariff.TotalByr, len(items))
+		}
+
 		exists, err := periksaLabExists(ctx, tx, perm.NoRawat, kd, tgl, jam)
 		if err != nil {
 			return 0, 0, err
 		}
 		if exists {
-			log.Printf("[medqlab]   db=periksa_lab SKIP exists no_rawat=%s kd_jenis_prw=%s tgl=%s jam=%s",
-				perm.NoRawat, kd, tgl, jam)
+			if err := updatePeriksaLabTariff(ctx, tx, perm.NoRawat, kd, tgl, jam, tariff); err != nil {
+				return 0, 0, err
+			}
+			log.Printf("[medqlab]   db=periksa_lab SKIP exists UPDATE_TARIF no_rawat=%s kd_jenis_prw=%s tgl=%s jam=%s biaya=%.2f",
+				perm.NoRawat, kd, tgl, jam, tariff.TotalByr)
 			continue
-		}
-		tariff, err := loadPanelTariff(ctx, tx, kd)
-		if err != nil {
-			return 0, 0, fmt.Errorf("jns_perawatan_lab %s: %w", kd, err)
 		}
 		if _, err := tx.ExecContext(ctx, `
 INSERT INTO periksa_lab (
