@@ -6,6 +6,15 @@ import (
 	"fmt"
 )
 
+// tarifMode mirrors AdamLabs Node resolveTindakanTarif modes.
+type tarifMode string
+
+const (
+	tarifModeTindakan tarifMode = "tindakan"
+	tarifModeTemplate tarifMode = "template"
+	tarifModeNone     tarifMode = "none"
+)
+
 // loadOrderedTemplateTariffs returns template tariffs for items on the SIMRS order
 // under a given panel (kd_jenis_prw).
 func loadOrderedTemplateTariffs(ctx context.Context, tx *sql.Tx, noOrder, kdJenisPrw string) ([]templateTariff, error) {
@@ -56,15 +65,24 @@ func sumTemplateTariffs(items []templateTariff) panelTariff {
 
 // resolvePanelTariff mirrors AdamLabs Node resolveTindakanTarif:
 // use panel master when TotalByr > 0; otherwise roll up ordered template biaya_item.
-func resolvePanelTariff(panel panelTariff, items []templateTariff) panelTariff {
+func resolvePanelTariff(panel panelTariff, items []templateTariff) (panelTariff, tarifMode) {
 	if panel.TotalByr > 0 {
-		return panel
+		return panel, tarifModeTindakan
 	}
 	summed := sumTemplateTariffs(items)
 	if summed.TotalByr > 0 {
-		return summed
+		return summed, tarifModeTemplate
 	}
-	return panel
+	return panel, tarifModeNone
+}
+
+// detailTariffForMode returns item tariffs only in template mode; otherwise zeros
+// so Biaya Periksa is not double-counted with periksa_lab.biaya (AdamLabs Node).
+func detailTariffForMode(mode tarifMode, tpl templateTariff) templateTariff {
+	if mode == tarifModeTemplate {
+		return tpl
+	}
+	return templateTariff{IDTemplate: tpl.IDTemplate, KdJenisPrw: tpl.KdJenisPrw}
 }
 
 func updatePeriksaLabTariff(ctx context.Context, tx *sql.Tx, noRawat, kd, tgl, jam string, t panelTariff) error {

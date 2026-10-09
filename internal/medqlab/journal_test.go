@@ -59,18 +59,15 @@ func TestBuildJournalLinesSkipEmptyAccount(t *testing.T) {
 	}
 }
 
-func TestJournalTotalsAddPanelAndDetail(t *testing.T) {
+func TestJournalTotalsAddPanelOnly(t *testing.T) {
+	// writeSIMRS journals resolved panel tariff only (no addDetail) to avoid double-count.
 	var tot journalTotals
 	tot.addPanel(panelTariff{
 		BagianRS: 1, BHP: 2, TarifPerujuk: 3, TarifTindakanDokter: 4,
 		TarifTindakanPetugas: 5, KSO: 6, Menejemen: 7, TotalByr: 100,
 	})
-	tot.addDetail(templateTariff{
-		BagianRS: 10, BHP: 20, BagianPerujuk: 30, BagianDokter: 40,
-		BagianLaborat: 50, KSO: 60, Menejemen: 70, BiayaItem: 200,
-	})
-	if tot.Pendapatan != 300 || tot.JasaSarana != 11 || tot.BHP != 22 {
-		t.Fatalf("totals: %+v", tot)
+	if tot.Pendapatan != 100 || tot.JasaSarana != 1 || tot.BHP != 2 {
+		t.Fatalf("panel totals: %+v", tot)
 	}
 	if tot.isZero() {
 		t.Fatal("expected non-zero")
