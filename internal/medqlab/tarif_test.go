@@ -58,14 +58,15 @@ func TestDetailTariffForModeTindakanZeros(t *testing.T) {
 	}
 }
 
-func TestDetailTariffForModeTemplateKeeps(t *testing.T) {
+func TestDetailTariffForModeTemplateZeros(t *testing.T) {
+	// Panel already holds rollup; detail must be 0 or Khanza UI double-counts.
 	tpl := templateTariff{
 		IDTemplate: 11, KdJenisPrw: "082-A-K3",
 		BagianRS: 55000, BiayaItem: 55000,
 	}
 	got := detailTariffForMode(tarifModeTemplate, tpl)
-	if got.BiayaItem != 55000 || got.BagianRS != 55000 || got.IDTemplate != 11 {
-		t.Fatalf("template mode should keep item tariff: %+v", got)
+	if got.BiayaItem != 0 || got.BagianRS != 0 || got.IDTemplate != 11 {
+		t.Fatalf("template mode detail tariffs must be zero: %+v", got)
 	}
 }
 

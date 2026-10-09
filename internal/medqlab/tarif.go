@@ -76,12 +76,12 @@ func resolvePanelTariff(panel panelTariff, items []templateTariff) (panelTariff,
 	return panel, tarifModeNone
 }
 
-// detailTariffForMode returns item tariffs only in template mode; otherwise zeros
-// so Biaya Periksa is not double-counted with periksa_lab.biaya (AdamLabs Node).
+// detailTariffForMode always zeros detail billing columns. Charge lives once on
+// periksa_lab (tindakan master or template rollup). Keeping template biaya_item
+// on details made Khanza Biaya Periksa = panel + SUM(items) (double-count), e.g.
+// 002-A-K3 with total_byr=0 and 3×40k items → 120k panel + 120k details = 240k.
 func detailTariffForMode(mode tarifMode, tpl templateTariff) templateTariff {
-	if mode == tarifModeTemplate {
-		return tpl
-	}
+	_ = mode // mode still used for panel resolve / logging; details never billed twice
 	return templateTariff{IDTemplate: tpl.IDTemplate, KdJenisPrw: tpl.KdJenisPrw}
 }
 
