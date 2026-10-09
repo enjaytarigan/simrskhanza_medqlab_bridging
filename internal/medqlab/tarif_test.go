@@ -14,18 +14,20 @@ func TestResolvePanelTariffPanelWins(t *testing.T) {
 	}
 }
 
-func TestResolvePanelTariffRollupFromItems(t *testing.T) {
-	panel := panelTariff{} // total_byr = 0
+func TestResolvePanelTariffTemplateKeepsPanelZero(t *testing.T) {
+	// Khanza native: panel total_byr=0, charge on items — do not roll up onto periksa_lab.
+	panel := panelTariff{}
 	items := []templateTariff{
-		{BiayaItem: 55000, BagianRS: 55000},
-		{BiayaItem: 0, BagianRS: 0, BHP: 100}, // still summed if any cost fields set
+		{BiayaItem: 40000, BagianRS: 40000},
+		{BiayaItem: 40000, BagianRS: 40000},
+		{BiayaItem: 40000, BagianRS: 40000},
 	}
 	got, mode := resolvePanelTariff(panel, items)
 	if mode != tarifModeTemplate {
 		t.Fatalf("want mode=template, got %s", mode)
 	}
-	if got.TotalByr != 55000 || got.BagianRS != 55000 || got.BHP != 100 {
-		t.Fatalf("want rollup 55000/55000/100, got %+v", got)
+	if got.TotalByr != 0 || got.BagianRS != 0 {
+		t.Fatalf("panel must stay 0 in template mode, got %+v", got)
 	}
 }
 
@@ -58,15 +60,14 @@ func TestDetailTariffForModeTindakanZeros(t *testing.T) {
 	}
 }
 
-func TestDetailTariffForModeTemplateZeros(t *testing.T) {
-	// Panel already holds rollup; detail must be 0 or Khanza UI double-counts.
+func TestDetailTariffForModeTemplateKeeps(t *testing.T) {
 	tpl := templateTariff{
-		IDTemplate: 11, KdJenisPrw: "082-A-K3",
-		BagianRS: 55000, BiayaItem: 55000,
+		IDTemplate: 11, KdJenisPrw: "002-A-K3",
+		BagianRS: 40000, BiayaItem: 40000,
 	}
 	got := detailTariffForMode(tarifModeTemplate, tpl)
-	if got.BiayaItem != 0 || got.BagianRS != 0 || got.IDTemplate != 11 {
-		t.Fatalf("template mode detail tariffs must be zero: %+v", got)
+	if got.BiayaItem != 40000 || got.BagianRS != 40000 || got.IDTemplate != 11 {
+		t.Fatalf("template mode should keep item tariff: %+v", got)
 	}
 }
 

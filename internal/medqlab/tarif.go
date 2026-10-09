@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-// tarifMode mirrors AdamLabs Node resolveTindakanTarif modes.
+// tarifMode classifies how Khanza bills a lab panel (DlgPeriksaLaboratorium).
 type tarifMode string
 
 const (
@@ -46,8 +46,7 @@ WHERE pd.noorder=? AND t.kd_jenis_prw=?`, noOrder, kdJenisPrw)
 	return out, rows.Err()
 }
 
-// sumTemplateTariffs rolls item tariffs into panel-shaped fields
-// (AdamLabs Node resolveTindakanTarif mode=template).
+// sumTemplateTariffs rolls item tariffs into panel-shaped fields (used for mode detect / tests).
 func sumTemplateTariffs(items []templateTariff) panelTariff {
 	var p panelTariff
 	for _, it := range items {
@@ -63,25 +62,28 @@ func sumTemplateTariffs(items []templateTariff) panelTariff {
 	return p
 }
 
-// resolvePanelTariff mirrors AdamLabs Node resolveTindakanTarif:
-// use panel master when TotalByr > 0; otherwise roll up ordered template biaya_item.
+// resolvePanelTariff mirrors native Khanza billing (not AdamLabs Node rollup-to-panel):
+//   tindakan — jns_perawatan_lab.total_byr > 0 → charge on periksa_lab, details 0
+//   template — total_byr = 0 but ordered items have biaya_item → periksa_lab stays 0,
+//              charge on detail_periksa_lab (Biaya Periksa = SUM items)
+//   none     — both zero
 func resolvePanelTariff(panel panelTariff, items []templateTariff) (panelTariff, tarifMode) {
 	if panel.TotalByr > 0 {
 		return panel, tarifModeTindakan
 	}
-	summed := sumTemplateTariffs(items)
-	if summed.TotalByr > 0 {
-		return summed, tarifModeTemplate
+	if sumTemplateTariffs(items).TotalByr > 0 {
+		// Keep panel at master zeros; do not roll up onto periksa_lab.biaya.
+		return panel, tarifModeTemplate
 	}
 	return panel, tarifModeNone
 }
 
-// detailTariffForMode always zeros detail billing columns. Charge lives once on
-// periksa_lab (tindakan master or template rollup). Keeping template biaya_item
-// on details made Khanza Biaya Periksa = panel + SUM(items) (double-count), e.g.
-// 002-A-K3 with total_byr=0 and 3×40k items → 120k panel + 120k details = 240k.
+// detailTariffForMode: template mode keeps item tariffs; tindakan/none zero them
+// so Biaya Periksa = panel XOR items, never both.
 func detailTariffForMode(mode tarifMode, tpl templateTariff) templateTariff {
-	_ = mode // mode still used for panel resolve / logging; details never billed twice
+	if mode == tarifModeTemplate {
+		return tpl
+	}
 	return templateTariff{IDTemplate: tpl.IDTemplate, KdJenisPrw: tpl.KdJenisPrw}
 }
 

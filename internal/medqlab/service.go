@@ -445,7 +445,7 @@ UPDATE permintaan_lab SET tgl_hasil=?, jam_hasil=? WHERE noorder=?`,
 		}
 		tariff, mode := resolvePanelTariff(panel, items)
 		panelMode[kd] = mode
-		log.Printf("[medqlab]   tarif_resolve kd=%s mode=%s biaya=%.2f items=%d",
+		log.Printf("[medqlab]   tarif_resolve kd=%s mode=%s panel_biaya=%.2f ordered_items=%d",
 			kd, mode, tariff.TotalByr, len(items))
 
 		exists, err := periksaLabExists(ctx, tx, perm.NoRawat, kd, tgl, jam)
@@ -472,11 +472,13 @@ INSERT INTO periksa_lab (
 		); err != nil {
 			return 0, 0, fmt.Errorf("insert periksa_lab %s: %w", kd, err)
 		}
-		// Charge once at panel level (resolved tariff); do not addDetail — avoids double journal.
-		totals.addPanel(tariff)
+		// Journal panel amount only in tindakan mode (template charges on details).
+		if mode == tarifModeTindakan {
+			totals.addPanel(tariff)
+		}
 		panelsWritten++
-		log.Printf("[medqlab]   db=periksa_lab INSERT kd_jenis_prw=%s biaya=%.2f dokter_perujuk=%s",
-			kd, tariff.TotalByr, perm.DokterPerujuk)
+		log.Printf("[medqlab]   db=periksa_lab INSERT kd_jenis_prw=%s mode=%s biaya=%.2f dokter_perujuk=%s",
+			kd, mode, tariff.TotalByr, perm.DokterPerujuk)
 	}
 
 	for _, m := range mapped {
@@ -494,6 +496,9 @@ INSERT INTO periksa_lab (
 			nilai, rujukan, ket, detailTariff)
 		if err != nil {
 			return 0, 0, err
+		}
+		if action == "INSERT" && mode == tarifModeTemplate {
+			totals.addDetail(detailTariff)
 		}
 		if action != "" {
 			detailWritten++
