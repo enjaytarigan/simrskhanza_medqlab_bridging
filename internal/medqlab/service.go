@@ -432,6 +432,7 @@ UPDATE permintaan_lab SET tgl_hasil=?, jam_hasil=? WHERE noorder=?`,
 	log.Printf("[medqlab]   unique_panels=%d status_label=%s pj=%s nip=%s", len(panelSet), statusLabel, pj, nip)
 
 	var totals journalTotals
+	panelMode := map[string]tarifMode{}
 
 	for kd := range panelSet {
 		panel, err := loadPanelTariff(ctx, tx, kd)
@@ -442,11 +443,10 @@ UPDATE permintaan_lab SET tgl_hasil=?, jam_hasil=? WHERE noorder=?`,
 		if err != nil {
 			return 0, 0, fmt.Errorf("ordered templates %s: %w", kd, err)
 		}
-		tariff := resolvePanelTariff(panel, items)
-		if panel.TotalByr <= 0 && tariff.TotalByr > 0 {
-			log.Printf("[medqlab]   tarif_resolve kd=%s mode=template_rollup biaya=%.2f (panel_total_byr=0 items=%d)",
-				kd, tariff.TotalByr, len(items))
-		}
+		tariff, mode := resolvePanelTariff(panel, items)
+		panelMode[kd] = mode
+		log.Printf("[medqlab]   tarif_resolve kd=%s mode=%s biaya=%.2f items=%d",
+			kd, mode, tariff.TotalByr, len(items))
 
 		exists, err := periksaLabExists(ctx, tx, perm.NoRawat, kd, tgl, jam)
 		if err != nil {
@@ -472,6 +472,7 @@ INSERT INTO periksa_lab (
 		); err != nil {
 			return 0, 0, fmt.Errorf("insert periksa_lab %s: %w", kd, err)
 		}
+		// Charge once at panel level (resolved tariff); do not addDetail — avoids double journal.
 		totals.addPanel(tariff)
 		panelsWritten++
 		log.Printf("[medqlab]   db=periksa_lab INSERT kd_jenis_prw=%s biaya=%.2f dokter_perujuk=%s",
@@ -483,22 +484,21 @@ INSERT INTO periksa_lab (
 		if err != nil {
 			return 0, 0, fmt.Errorf("template %d: %w", m.IDTemplate, err)
 		}
+		mode := panelMode[m.KdJenisPrw]
+		detailTariff := detailTariffForMode(mode, tpl)
 		nilai := truncate(m.Leaf.Nilai, 500)
 		rujukan := truncate(m.Leaf.NilaiRujukan, 500)
 		ket := truncate(m.Leaf.Keterangan, 200)
 
 		action, err := upsertDetail(ctx, tx, perm.NoRawat, m.KdJenisPrw, tgl, jam, m.IDTemplate,
-			nilai, rujukan, ket, tpl)
+			nilai, rujukan, ket, detailTariff)
 		if err != nil {
 			return 0, 0, err
 		}
-		if action == "INSERT" {
-			totals.addDetail(tpl)
-		}
 		if action != "" {
 			detailWritten++
-			log.Printf("[medqlab]   db=detail_periksa_lab %s id_template=%d kd=%s testId=%s name=%q nilai=%q ket=%q",
-				action, m.IDTemplate, m.KdJenisPrw, m.Leaf.LisTestID, m.Leaf.TestName, truncate(nilai, 80), ket)
+			log.Printf("[medqlab]   db=detail_periksa_lab %s id_template=%d kd=%s mode=%s testId=%s name=%q nilai=%q ket=%q biaya_item=%.2f",
+				action, m.IDTemplate, m.KdJenisPrw, mode, m.Leaf.LisTestID, m.Leaf.TestName, truncate(nilai, 80), ket, detailTariff.BiayaItem)
 		}
 	}
 
