@@ -87,6 +87,28 @@ func detailTariffForMode(mode tarifMode, tpl templateTariff) templateTariff {
 	return templateTariff{IDTemplate: tpl.IDTemplate, KdJenisPrw: tpl.KdJenisPrw}
 }
 
+// isPricedTemplate reports whether a template carries any billable amount.
+func isPricedTemplate(t templateTariff) bool {
+	return t.BiayaItem > 0 || t.BagianRS > 0 || t.BHP > 0 || t.BagianPerujuk > 0 ||
+		t.BagianDokter > 0 || t.BagianLaborat > 0 || t.KSO > 0 || t.Menejemen > 0
+}
+
+// feeOnlyOrderedTemplates returns ordered templates that have a tariff but were
+// not written as hasil leaves (Khanza native fee-header rows, e.g. ELEKTROLIT).
+func feeOnlyOrderedTemplates(ordered []templateTariff, writtenIDs map[int]bool) []templateTariff {
+	var out []templateTariff
+	for _, t := range ordered {
+		if writtenIDs[t.IDTemplate] {
+			continue
+		}
+		if !isPricedTemplate(t) {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
 func updatePeriksaLabTariff(ctx context.Context, tx *sql.Tx, noRawat, kd, tgl, jam string, t panelTariff) error {
 	_, err := tx.ExecContext(ctx, `
 UPDATE periksa_lab SET
