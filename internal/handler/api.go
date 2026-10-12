@@ -98,7 +98,9 @@ func (s *Server) apiDeleteLisTest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) apiListPanels(w http.ResponseWriter, r *http.Request) {
-	list, err := s.simrs.ListPanels(r.Context())
+	q := r.URL.Query().Get("q")
+	kategori := r.URL.Query().Get("kategori")
+	list, err := s.simrs.ListPanels(r.Context(), q, kategori)
 	if err != nil {
 		writeAPI(w, http.StatusInternalServerError, nil, err.Error())
 		return

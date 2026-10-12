@@ -5,7 +5,8 @@
   <meta charset="utf-8">
   <title>{{.Title}} — LIS Khanza Mapper</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
-  <style>nav a { margin-right: 1rem; } .flash { color: green; } .err { color: #c00; } table { font-size: 0.85rem; }</style>
+  <style>nav a { margin-right: 1rem; } .flash { color: green; } .err { color: #c00; } table { font-size: 0.85rem; } .num { text-align: right; white-space: nowrap; }</style>
+  {{template "tom_select_assets" .}}
 </head>
 <body>
 <main class="container">
@@ -17,7 +18,7 @@
 <h2>1. Select SIMRS templates</h2>
 <form method="get" action="/map/bulk" class="grid">
   <label>Panel filter
-    <select name="kd_jenis_prw">
+    <select name="kd_jenis_prw" data-searchable data-placeholder="All panels">
       <option value="">All panels</option>
       {{range .Panels}}
       <option value="{{.KdJenisPrw}}" {{if eq $.Bulk.KdJenisPrw .KdJenisPrw}}selected{{end}}>{{.NmPerawatan}} / {{.KdJenisPrw}}</option>
@@ -39,7 +40,7 @@
     <p><button type="button" onclick="document.querySelectorAll('input.tpl').forEach(c=>c.checked=true)">Select all</button>
     <button type="button" class="secondary" onclick="document.querySelectorAll('input.tpl').forEach(c=>c.checked=false)">Clear</button></p>
     <table>
-      <thead><tr><th></th><th>id_template</th><th>Pemeriksaan</th><th>satuan</th><th>panel</th>{{if .Bulk.LisTestsPK}}<th>mapped?</th>{{end}}</tr></thead>
+      <thead><tr><th></th><th>id_template</th><th>Pemeriksaan</th><th>satuan</th><th class="num">Biaya item</th><th>panel</th>{{if .Bulk.LisTestsPK}}<th>mapped?</th>{{end}}</tr></thead>
       <tbody>
       {{range .Templates}}
       <tr>
@@ -47,11 +48,12 @@
         <td>{{.IDTemplate}}</td>
         <td>{{.Pemeriksaan}}</td>
         <td>{{.Satuan}}</td>
+        <td class="num">{{formatMoney .BiayaItem}}</td>
         <td>{{.NmPerawatan}} <small>({{.KdJenisPrw}})</small></td>
         {{if $.Bulk.LisTestsPK}}<td>{{if .Mapped}}yes{{else}}no{{end}}</td>{{end}}
       </tr>
       {{else}}
-      <tr><td colspan="{{if $.Bulk.LisTestsPK}}6{{else}}5{{end}}">Search templates above, or widen filters.</td></tr>
+      <tr><td colspan="{{if $.Bulk.LisTestsPK}}7{{else}}6{{end}}">Search templates above, or widen filters.</td></tr>
       {{end}}
       </tbody>
     </table>

@@ -481,6 +481,7 @@ INSERT INTO periksa_lab (
 			kd, mode, tariff.TotalByr, perm.DokterPerujuk)
 	}
 
+	writtenIDs := map[int]bool{}
 	for _, m := range mapped {
 		tpl, err := loadTemplateTariff(ctx, tx, m.IDTemplate)
 		if err != nil {
@@ -497,6 +498,7 @@ INSERT INTO periksa_lab (
 		if err != nil {
 			return 0, 0, err
 		}
+		writtenIDs[m.IDTemplate] = true
 		if action == "INSERT" && mode == tarifModeTemplate {
 			totals.addDetail(detailTariff)
 		}
@@ -504,6 +506,34 @@ INSERT INTO periksa_lab (
 			detailWritten++
 			log.Printf("[medqlab]   db=detail_periksa_lab %s id_template=%d kd=%s mode=%s testId=%s name=%q nilai=%q ket=%q biaya_item=%.2f",
 				action, m.IDTemplate, m.KdJenisPrw, mode, m.Leaf.LisTestID, m.Leaf.TestName, truncate(nilai, 80), ket, detailTariff.BiayaItem)
+		}
+	}
+
+	// Khanza native: insert fee-header templates from the order that have no hasil leaf
+	// (e.g. ELEKTROLIT 300k while Na+/K+/CL- are result-only with biaya 0).
+	for kd, mode := range panelMode {
+		if mode != tarifModeTemplate {
+			continue
+		}
+		ordered, err := loadOrderedTemplateTariffs(ctx, tx, perm.NoOrder, kd)
+		if err != nil {
+			return 0, 0, fmt.Errorf("fee-only ordered templates %s: %w", kd, err)
+		}
+		for _, fee := range feeOnlyOrderedTemplates(ordered, writtenIDs) {
+			action, err := upsertDetail(ctx, tx, perm.NoRawat, kd, tgl, jam, fee.IDTemplate,
+				"", "", "", fee)
+			if err != nil {
+				return 0, 0, fmt.Errorf("fee-only detail %d: %w", fee.IDTemplate, err)
+			}
+			writtenIDs[fee.IDTemplate] = true
+			if action == "INSERT" {
+				totals.addDetail(fee)
+			}
+			if action != "" {
+				detailWritten++
+				log.Printf("[medqlab]   db=detail_periksa_lab INSERT_FEE id_template=%d kd=%s biaya_item=%.2f action=%s",
+					fee.IDTemplate, kd, fee.BiayaItem, action)
+			}
 		}
 	}
 

@@ -16,9 +16,39 @@ func NewSimrsRepo(db *sql.DB) *SimrsRepo {
 	return &SimrsRepo{db: db}
 }
 
-func (r *SimrsRepo) ListPanels(ctx context.Context) ([]model.Panel, error) {
-	rows, err := r.db.QueryContext(ctx, `
-SELECT kd_jenis_prw, nm_perawatan FROM jns_perawatan_lab ORDER BY nm_perawatan`)
+// ListPanels returns jns_perawatan_lab rows with tariff summary.
+// q matches kd_jenis_prw / nm_perawatan; empty kategori means no kategori filter.
+func (r *SimrsRepo) ListPanels(ctx context.Context, q, kategori string) ([]model.Panel, error) {
+	sqlQ := `
+SELECT j.kd_jenis_prw, j.nm_perawatan,
+       IFNULL(j.total_byr,0), IFNULL(j.kategori,''), IFNULL(j.status,''),
+       COUNT(t.id_template) AS jml_template,
+       IFNULL(SUM(t.biaya_item),0) AS sum_biaya_item,
+       CASE
+         WHEN IFNULL(j.total_byr,0) > 0 THEN 'tindakan'
+         WHEN IFNULL(SUM(t.biaya_item),0) > 0 THEN 'template'
+         ELSE 'none'
+       END AS tarif_mode
+FROM jns_perawatan_lab j
+LEFT JOIN template_laboratorium t ON t.kd_jenis_prw = j.kd_jenis_prw
+WHERE 1=1`
+	args := []any{}
+	kategori = strings.TrimSpace(kategori)
+	if kategori != "" {
+		sqlQ += " AND j.kategori = ?"
+		args = append(args, kategori)
+	}
+	q = strings.TrimSpace(q)
+	if q != "" {
+		sqlQ += " AND (j.kd_jenis_prw LIKE ? OR j.nm_perawatan LIKE ?)"
+		like := "%" + q + "%"
+		args = append(args, like, like)
+	}
+	sqlQ += `
+GROUP BY j.kd_jenis_prw, j.nm_perawatan, j.total_byr, j.kategori, j.status
+ORDER BY j.nm_perawatan, j.kd_jenis_prw`
+
+	rows, err := r.db.QueryContext(ctx, sqlQ, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -26,7 +56,11 @@ SELECT kd_jenis_prw, nm_perawatan FROM jns_perawatan_lab ORDER BY nm_perawatan`)
 	var list []model.Panel
 	for rows.Next() {
 		var p model.Panel
-		if err := rows.Scan(&p.KdJenisPrw, &p.NmPerawatan); err != nil {
+		if err := rows.Scan(
+			&p.KdJenisPrw, &p.NmPerawatan,
+			&p.TotalByr, &p.Kategori, &p.Status,
+			&p.TemplateCount, &p.SumBiayaItem, &p.TarifMode,
+		); err != nil {
 			return nil, err
 		}
 		list = append(list, p)
@@ -40,6 +74,7 @@ func (r *SimrsRepo) ListTemplates(ctx context.Context, kdJenisPrw, q string, lis
 	}
 	sqlQ := `
 SELECT t.id_template, t.Pemeriksaan, t.satuan, IFNULL(t.urut,0), t.kd_jenis_prw, j.nm_perawatan,
+       IFNULL(t.biaya_item,0),
        EXISTS(
          SELECT 1 FROM lis_mapping_tests m
          WHERE m.id_template = t.id_template AND m.status = 'aktif'
@@ -69,7 +104,10 @@ WHERE 1=1`
 	for rows.Next() {
 		var t model.Template
 		var mapped int
-		if err := rows.Scan(&t.IDTemplate, &t.Pemeriksaan, &t.Satuan, &t.Urut, &t.KdJenisPrw, &t.NmPerawatan, &mapped); err != nil {
+		if err := rows.Scan(
+			&t.IDTemplate, &t.Pemeriksaan, &t.Satuan, &t.Urut, &t.KdJenisPrw, &t.NmPerawatan,
+			&t.BiayaItem, &mapped,
+		); err != nil {
 			return nil, err
 		}
 		t.Mapped = mapped == 1

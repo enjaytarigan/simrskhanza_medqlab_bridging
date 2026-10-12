@@ -70,6 +70,7 @@ func (s *Server) Router() http.Handler {
 		pr.Post("/lis-tests/{id}/delete", s.lisTestDelete)
 
 		pr.Get("/templates", s.templateList)
+		pr.Get("/panels", s.panelList)
 		pr.Get("/map/bulk", s.bulkMapForm)
 		pr.Post("/map/bulk", s.bulkMapSubmit)
 

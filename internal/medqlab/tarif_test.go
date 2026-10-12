@@ -96,3 +96,57 @@ func TestSumTemplateTariffsMapsFields(t *testing.T) {
 		t.Fatalf("sum fields: %+v", got)
 	}
 }
+
+func TestFeeOnlyOrderedTemplatesElektrolit(t *testing.T) {
+	// Fee header ELEKTROLIT 300k not in hasil; ion leaves written with biaya 0.
+	ordered := []templateTariff{
+		{IDTemplate: 5345, BiayaItem: 300000, BagianRS: 300000},
+		{IDTemplate: 5346, BiayaItem: 0},
+		{IDTemplate: 5347, BiayaItem: 0},
+		{IDTemplate: 5348, BiayaItem: 0},
+	}
+	written := map[int]bool{5346: true, 5347: true, 5348: true}
+	got := feeOnlyOrderedTemplates(ordered, written)
+	if len(got) != 1 || got[0].IDTemplate != 5345 || got[0].BiayaItem != 300000 {
+		t.Fatalf("want only ELEKTROLIT fee: %+v", got)
+	}
+}
+
+func TestFeeOnlyOrderedTemplatesKimiaEmpty(t *testing.T) {
+	// All priced items already written as hasil — no fee-only rows.
+	ordered := []templateTariff{
+		{IDTemplate: 1, BiayaItem: 40000},
+		{IDTemplate: 2, BiayaItem: 40000},
+		{IDTemplate: 3, BiayaItem: 40000},
+	}
+	written := map[int]bool{1: true, 2: true, 3: true}
+	got := feeOnlyOrderedTemplates(ordered, written)
+	if len(got) != 0 {
+		t.Fatalf("want no fee-only, got %+v", got)
+	}
+}
+
+func TestFeeOnlySkipsUnpricedAndAlreadyWritten(t *testing.T) {
+	ordered := []templateTariff{
+		{IDTemplate: 10, BiayaItem: 50000},
+		{IDTemplate: 11, BiayaItem: 0},
+		{IDTemplate: 12, BiayaItem: 25000},
+	}
+	written := map[int]bool{10: true}
+	got := feeOnlyOrderedTemplates(ordered, written)
+	if len(got) != 1 || got[0].IDTemplate != 12 {
+		t.Fatalf("want only id 12: %+v", got)
+	}
+}
+
+func TestIsPricedTemplate(t *testing.T) {
+	if isPricedTemplate(templateTariff{}) {
+		t.Fatal("zero should be unpriced")
+	}
+	if !isPricedTemplate(templateTariff{BiayaItem: 1}) {
+		t.Fatal("biaya_item")
+	}
+	if !isPricedTemplate(templateTariff{BagianRS: 1}) {
+		t.Fatal("bagian_rs alone counts")
+	}
+}
