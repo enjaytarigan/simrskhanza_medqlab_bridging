@@ -127,7 +127,7 @@ func (s *Server) templateList(w http.ResponseWriter, r *http.Request) {
 	kd := r.URL.Query().Get("kd_jenis_prw")
 	q := r.URL.Query().Get("q")
 	lisPK, _ := strconv.ParseUint(r.URL.Query().Get("lis_tests_pk"), 10, 64)
-	panels, _ := s.simrs.ListPanels(r.Context())
+	panels, _ := s.simrs.ListPanels(r.Context(), "", "")
 	templates, err := s.simrs.ListTemplates(r.Context(), kd, q, lisPK, 500)
 	if err != nil {
 		render(w, "templates.html", pageData{Title: "SIMRS Templates", Error: err.Error(), Panels: panels})
@@ -141,8 +141,37 @@ func (s *Server) templateList(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) panelList(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+	kategori := r.URL.Query().Get("kategori")
+	if kategori == "" {
+		kategori = "PK"
+	}
+	if kategori == "all" {
+		kategori = ""
+	}
+	panels, err := s.simrs.ListPanels(r.Context(), q, kategori)
+	katQuery := r.URL.Query().Get("kategori")
+	if katQuery == "" {
+		katQuery = "PK"
+	}
+	if err != nil {
+		render(w, "panels.html", pageData{
+			Title: "SIMRS Panels",
+			Error: err.Error(),
+			Query: map[string]string{"q": q, "kategori": katQuery},
+		})
+		return
+	}
+	render(w, "panels.html", pageData{
+		Title:  "SIMRS Panels",
+		Panels: panels,
+		Query:  map[string]string{"q": q, "kategori": katQuery},
+	})
+}
+
 func (s *Server) bulkMapForm(w http.ResponseWriter, r *http.Request) {
-	panels, _ := s.simrs.ListPanels(r.Context())
+	panels, _ := s.simrs.ListPanels(r.Context(), "", "")
 	tests, _ := s.lisTests.List(r.Context(), "", "aktif")
 	lisPK, _ := strconv.ParseUint(r.URL.Query().Get("lis_tests_pk"), 10, 64)
 	kd := r.URL.Query().Get("kd_jenis_prw")

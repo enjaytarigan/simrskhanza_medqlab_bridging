@@ -5,7 +5,8 @@
   <meta charset="utf-8">
   <title>{{.Title}} — LIS Khanza Mapper</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
-  <style>nav a { margin-right: 1rem; } .mapped { color: green; }</style>
+  <style>nav a { margin-right: 1rem; } .mapped { color: green; } .num { text-align: right; white-space: nowrap; }</style>
+  {{template "tom_select_assets" .}}
 </head>
 <body>
 <main class="container">
@@ -13,29 +14,33 @@
 <h1>{{.Title}}</h1>
 {{if .Error}}<p class="err">{{.Error}}</p>{{end}}
 <form method="get" class="grid">
-  <select name="kd_jenis_prw">
-    <option value="">All panels</option>
-    {{range .Panels}}
-    <option value="{{.KdJenisPrw}}" {{if eq .KdJenisPrw (index $.Query "kd_jenis_prw")}}selected{{end}}>{{.NmPerawatan}} / {{.KdJenisPrw}}</option>
-    {{end}}
-  </select>
+  <label>Panels
+    <select name="kd_jenis_prw" data-searchable data-placeholder="All panels">
+      <option value="">All panels</option>
+      {{range .Panels}}
+      <option value="{{.KdJenisPrw}}" {{if eq .KdJenisPrw (index $.Query "kd_jenis_prw")}}selected{{end}}>{{.NmPerawatan}} / {{.KdJenisPrw}}</option>
+      {{end}}
+    </select>
+  </label>
   <input type="search" name="q" placeholder="Pemeriksaan" value="{{index .Query "q"}}">
   <button type="submit">Apply</button>
 </form>
-<p><a href="/map/bulk?kd_jenis_prw={{index .Query "kd_jenis_prw"}}&q={{index .Query "q"}}">Open in Bulk Map</a></p>
+<p><a href="/map/bulk?kd_jenis_prw={{index .Query "kd_jenis_prw"}}&q={{index .Query "q"}}">Open in Bulk Map</a>
+ · <a href="/panels">Browse panels</a></p>
 <table>
-  <thead><tr><th>id_template</th><th>Pemeriksaan</th><th>satuan</th><th>panel</th><th>mapped?</th></tr></thead>
+  <thead><tr><th>id_template</th><th>Pemeriksaan</th><th>satuan</th><th class="num">Biaya item</th><th>panel</th><th>mapped?</th></tr></thead>
   <tbody>
   {{range .Templates}}
   <tr>
     <td>{{.IDTemplate}}</td>
     <td>{{.Pemeriksaan}}</td>
     <td>{{.Satuan}}</td>
+    <td class="num">{{formatMoney .BiayaItem}}</td>
     <td>{{.NmPerawatan}} <small>({{.KdJenisPrw}})</small></td>
     <td>{{if .Mapped}}<span class="mapped">yes</span>{{else}}no{{end}}</td>
   </tr>
   {{else}}
-  <tr><td colspan="5">No templates found.</td></tr>
+  <tr><td colspan="6">No templates found.</td></tr>
   {{end}}
   </tbody>
 </table>

@@ -1,0 +1,72 @@
+{{define "panels.html"}}
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <title>{{.Title}} — LIS Khanza Mapper</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    nav a { margin-right: 1rem; }
+    .err { color: #c00; }
+    .num { text-align: right; white-space: nowrap; }
+    .mode-tindakan { color: #0a7; }
+    .mode-template { color: #06c; }
+    .mode-none { color: #888; }
+    table { font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+<main class="container">
+{{template "nav" .}}
+<h1>{{.Title}}</h1>
+{{if .Error}}<p class="err">{{.Error}}</p>{{end}}
+
+<form method="get" class="grid">
+  <input type="search" name="q" placeholder="Search kode / nama panel" value="{{index .Query "q"}}">
+  <label>Kategori
+    <select name="kategori">
+      <option value="PK" {{if eq (index .Query "kategori") "PK"}}selected{{end}}>PK</option>
+      <option value="PA" {{if eq (index .Query "kategori") "PA"}}selected{{end}}>PA</option>
+      <option value="MB" {{if eq (index .Query "kategori") "MB"}}selected{{end}}>MB</option>
+      <option value="all" {{if eq (index .Query "kategori") "all"}}selected{{end}}>All</option>
+    </select>
+  </label>
+  <button type="submit">Apply</button>
+</form>
+
+<p><small>{{len .Panels}} panel(s). Mode: <strong>tindakan</strong> = charge panel <code>total_byr</code>; <strong>template</strong> = charge item <code>biaya_item</code>.</small></p>
+
+<table>
+  <thead>
+    <tr>
+      <th>kd_jenis_prw</th>
+      <th>nm_perawatan</th>
+      <th class="num">Panel harga</th>
+      <th class="num"># template</th>
+      <th class="num">Sum biaya item</th>
+      <th>Mode</th>
+      <th>Status</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {{range .Panels}}
+  <tr>
+    <td><code>{{.KdJenisPrw}}</code></td>
+    <td>{{.NmPerawatan}}</td>
+    <td class="num">{{formatMoney .TotalByr}}</td>
+    <td class="num">{{.TemplateCount}}</td>
+    <td class="num">{{formatMoney .SumBiayaItem}}</td>
+    <td><span class="mode-{{.TarifMode}}">{{.TarifMode}}</span></td>
+    <td>{{.Status}}</td>
+    <td><a href="/templates?kd_jenis_prw={{.KdJenisPrw}}">Templates</a></td>
+  </tr>
+  {{else}}
+  <tr><td colspan="8">No panels found.</td></tr>
+  {{end}}
+  </tbody>
+</table>
+</main>
+</body>
+</html>
+{{end}}

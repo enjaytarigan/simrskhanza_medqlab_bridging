@@ -14,8 +14,14 @@ type LisTest struct {
 }
 
 type Panel struct {
-	KdJenisPrw  string
-	NmPerawatan string
+	KdJenisPrw    string
+	NmPerawatan   string
+	TotalByr      float64
+	Kategori      string
+	Status        string
+	TemplateCount int
+	SumBiayaItem  float64
+	TarifMode     string // tindakan | template | none
 }
 
 type Template struct {
@@ -25,6 +31,7 @@ type Template struct {
 	Urut        int
 	KdJenisPrw  string
 	NmPerawatan string
+	BiayaItem   float64
 	Mapped      bool
 }
 
