@@ -25,7 +25,7 @@ Open `http://localhost:8080` and sign in with HTTP Basic auth.
 
 ## Standalone (no Khanza DB)
 
-HIS IT does not deploy this app on their server. Run it with its own MariaDB, import the SIMRS catalog, then map LIS tests. puruk-cahu (`medqlabv2_bridging`) looks up `id_template` at getResult time.
+HIS IT does not deploy this app on their server. Run it with its own MariaDB, import the SIMRS catalog, then map LIS tests. puruk-cahu (`medqlabv2_bridging`) looks up `id_template` at getResult time. Unknown MedQLab `testId`s are inserted into `lis_tests` on that resolve call (unmapped until Bulk Map).
 
 ```bash
 cp .env.standalone.example .env
@@ -121,12 +121,12 @@ X-API-Key: <MEDQLAB_WEBHOOK_API_KEY>
 ```json
 {
   "tests": [
-    { "test_id": "12345", "local_code": "HB", "order_ids": ["1001"] }
+    { "test_id": "12345", "local_code": "HB", "test_name": "Hemoglobin", "order_ids": ["1001"] }
   ]
 }
 ```
 
-Each result is `{ "test_id", "id_template", "kd_jenis_prw", "pemeriksaan", "status" }` where `status` is `mapped`, `unmapped`, or `ambiguous`. Selection: active `lis_test_id`, else a unique `local_code`; one mapping wins; several mappings keep the one whose `id_template` or `kd_jenis_prw` is in `order_ids`.
+Each result is `{ "test_id", "id_template", "kd_jenis_prw", "pemeriksaan", "status" }` where `status` is `mapped`, `unmapped`, or `ambiguous`. Selection: active `lis_test_id`, else a unique `local_code`; one mapping wins; several mappings keep the one whose `id_template` or `kd_jenis_prw` is in `order_ids`. Unknown `test_id`s are upserted into `lis_tests` (`test_name` optional) so standalone can learn the catalog from getResult; they stay `unmapped` until mapped in the UI. Hasil push remains disabled in standalone.
 
 ### MedQLab hasil push
 

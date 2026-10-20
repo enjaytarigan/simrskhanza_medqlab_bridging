@@ -107,3 +107,14 @@ func TestItemNumericJSON(t *testing.T) {
 		t.Fatalf("order_ids=%v", item.OrderIDs)
 	}
 }
+
+func TestItemTestNameJSON(t *testing.T) {
+	var item Item
+	raw := `{"test_id":"12345","local_code":"HB","test_name":"Hemoglobin","order_ids":["1001"]}`
+	if err := json.Unmarshal([]byte(raw), &item); err != nil {
+		t.Fatal(err)
+	}
+	if item.TestName.String() != "Hemoglobin" {
+		t.Fatalf("test_name=%q", item.TestName)
+	}
+}

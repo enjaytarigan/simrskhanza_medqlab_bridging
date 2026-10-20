@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"lis-khanza-mapper/internal/model"
 	"lis-khanza-mapper/internal/resolve"
 )
 
@@ -22,14 +23,28 @@ func (s *Server) resolveMappings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	seen := make([]model.LisTest, 0, len(body.Tests))
 	var testIDs, localCodes []string
 	for _, item := range body.Tests {
-		if v := item.TestID.String(); v != "" {
-			testIDs = append(testIDs, v)
+		id := item.TestID.String()
+		code := item.LocalCode.String()
+		if id != "" {
+			testIDs = append(testIDs, id)
+			seen = append(seen, model.LisTest{
+				LisTestID: id,
+				LocalCode: code,
+				TestName:  item.TestName.String(),
+			})
 		}
-		if v := item.LocalCode.String(); v != "" {
-			localCodes = append(localCodes, v)
+		if code != "" {
+			localCodes = append(localCodes, code)
 		}
+	}
+	if err := s.lisTests.UpsertSeen(r.Context(), seen); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"status": false, "code": 500, "message": err.Error(),
+		})
+		return
 	}
 
 	cands, err := s.mappings.ActiveCandidates(r.Context(), testIDs, localCodes)

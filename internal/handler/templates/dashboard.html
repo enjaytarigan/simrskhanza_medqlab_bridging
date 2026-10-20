@@ -12,7 +12,7 @@
 <main class="container">
 {{template "nav" .}}
 <h1>{{.Title}}</h1>
-{{if .Standalone}}<p><small>Mode: standalone (own database, no SIMRS connection). Hasil push is disabled. Import the Khanza catalog, then map LIS tests so puruk-cahu can resolve <code>testid_simrs</code>.</small></p>{{end}}
+{{if .Standalone}}<p><small>Mode: standalone (own database, no SIMRS connection). Hasil push is disabled. Import the Khanza catalog. LIS tests appear when puruk-cahu calls resolve; map them so <code>testid_simrs</code> can be filled.</small></p>{{end}}
 <div class="grid">
   <article><header>LIS tests (aktif)</header><p style="font-size:2rem">{{.Stats.LisTestsActive}}</p></article>
   <article><header>Mappings (aktif)</header><p style="font-size:2rem">{{.Stats.MappingsActive}}</p></article>

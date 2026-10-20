@@ -95,6 +95,40 @@ FROM lis_tests WHERE id = ?`, id)
 	return &t, nil
 }
 
+// UpsertSeen inserts unknown LIS tests (or refreshes name/code) from resolve traffic.
+// Empty test_id rows are skipped. Empty names on insert fall back to lis_test_id;
+// empty names/codes on update leave the stored value.
+func (r *LisTestRepo) UpsertSeen(ctx context.Context, tests []model.LisTest) error {
+	uniq := map[string]model.LisTest{}
+	for _, t := range tests {
+		id := strings.TrimSpace(t.LisTestID)
+		if id == "" {
+			continue
+		}
+		t.LisTestID = id
+		t.LocalCode = strings.TrimSpace(t.LocalCode)
+		t.TestName = strings.TrimSpace(t.TestName)
+		uniq[id] = t
+	}
+	for _, t := range uniq {
+		insertName := t.TestName
+		if insertName == "" {
+			insertName = t.LisTestID
+		}
+		if _, err := r.db.ExecContext(ctx, `
+INSERT INTO lis_tests (lis_test_id, local_code, test_name, status)
+VALUES (?,?,?,'aktif')
+ON DUPLICATE KEY UPDATE
+  local_code=IF(VALUES(local_code)='', local_code, VALUES(local_code)),
+  test_name=IF(?='', test_name, VALUES(test_name)),
+  updated_at=NOW()`,
+			t.LisTestID, t.LocalCode, insertName, t.TestName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *LisTestRepo) Create(ctx context.Context, t *model.LisTest) error {
 	res, err := r.db.ExecContext(ctx, `
 INSERT INTO lis_tests (lis_test_id, local_code, test_name, status) VALUES (?,?,?,?)`,

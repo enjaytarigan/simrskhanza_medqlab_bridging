@@ -23,6 +23,7 @@
   </select>
   <button type="submit">Filter</button>
 </form>
+{{if .Standalone}}<p><small>Unresolved MedQLab tests are inserted here automatically when puruk-cahu calls resolve. Map them under <a href="/map/bulk">Bulk Map</a>.</small></p>{{end}}
 <p><a href="/lis-tests/new" role="button">New LIS test</a></p>
 <table>
   <thead><tr><th>ID</th><th>lis_test_id</th><th>test_name</th><th>local_code</th><th>status</th><th>mappings</th><th></th></tr></thead>

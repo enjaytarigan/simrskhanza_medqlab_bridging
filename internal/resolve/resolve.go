@@ -43,6 +43,7 @@ type Request struct {
 type Item struct {
 	TestID    FlexString   `json:"test_id"`
 	LocalCode FlexString   `json:"local_code"`
+	TestName  FlexString   `json:"test_name"`
 	OrderIDs  []FlexString `json:"order_ids"`
 }
 
