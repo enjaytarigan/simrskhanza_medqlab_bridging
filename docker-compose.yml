@@ -7,9 +7,9 @@ services:
     container_name: lis-khanza-mapper
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-8080}:8080"
+      - "${APP_PORT:-8080}:${APP_PORT:-8080}"
     env_file:
       - .env
     environment:
-      APP_LISTEN: ":8080"
+      APP_LISTEN: ":${APP_PORT:-8080}"
       APP_ENV: production

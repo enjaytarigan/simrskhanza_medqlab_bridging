@@ -28,12 +28,10 @@ Open `http://localhost:8080` and sign in with HTTP Basic auth.
 HIS IT does not deploy this app on their server. Run it with its own MariaDB, import the SIMRS catalog, then map LIS tests. puruk-cahu (`medqlabv2_bridging`) looks up `id_template` at getResult time.
 
 ```bash
-cp .env.standalone.example .env.standalone
+cp .env.standalone.example .env
 # Set AUTH_USERNAME, AUTH_PASSWORD, MEDQLAB_WEBHOOK_API_KEY, APP_PORT
-docker compose --env-file .env.standalone -f docker-compose.standalone.yml up -d --build
+docker compose -f docker-compose.standalone.yml up -d --build
 ```
-
-`--env-file` is required so `APP_PORT` / `MYSQL_PORT` / `MYSQL_DATA_DIR` apply to published ports (service `env_file` alone does not).
 
 - App: `http://localhost:${APP_PORT:-8080}`
 - MariaDB: `localhost:3307` (user `mapper`, password `mapper`, database `mapper`)
@@ -52,7 +50,7 @@ Keep **one active mapping per LIS test**. If a test maps to several templates, i
 | File | Env | Purpose |
 |------|-----|---------|
 | `docker-compose.yml` | `.env` from `.env.example` | App only; Khanza MySQL |
-| `docker-compose.standalone.yml` | `.env.standalone` from `.env.standalone.example` | App + MariaDB; no Khanza DB |
+| `docker-compose.standalone.yml` | `.env` from `.env.standalone.example` | App + MariaDB; no Khanza DB |
 
 Khanza-connected deploy:
 
@@ -84,7 +82,7 @@ Local Go against `.env`:
 | `MYSQL_DATA_DIR` | Standalone | Host path for MariaDB files (default `./data/mysql`). Not a Docker named volume. |
 | `MIGRATE_ONLY` | No | If `true`, run migrations then exit |
 
-Copy `.env.example` → `.env` for `simrs`, or `.env.standalone.example` → `.env.standalone` for standalone. Generate a strong API key with `openssl rand -hex 32` if needed.
+Copy `.env.example` or `.env.standalone.example` to `.env`. Generate a strong API key with `openssl rand -hex 32` if needed.
 
 ## Health
 

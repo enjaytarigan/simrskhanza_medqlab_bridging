@@ -326,5 +326,5 @@ docker compose ps
 - Repositori: [github.com/enjaytarigan/lis-khanza-mapper](https://github.com/enjaytarigan/lis-khanza-mapper)
 - README proyek: `README.md`
 - Template env (SIMRS): `.env.example` → `.env`
-- Template env (standalone, no Khanza DB): `.env.standalone.example` → `.env.standalone`
+- Template env (standalone, no Khanza DB): `.env.standalone.example` → `.env`
 - Contoh query integrasi SIMRS (Java): lihat bagian integrasi di `README.md`
