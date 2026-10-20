@@ -35,6 +35,7 @@ docker compose -f docker-compose.standalone.yml up -d --build
 
 - App: `http://localhost:8080`
 - MariaDB: `localhost:3307` (user `mapper`, password `mapper`, database `mapper`)
+- Data: host directory `./data/mysql` (`MYSQL_DATA_DIR`)
 
 Catalog CSV columns (re-import updates by `id_template`):
 
@@ -78,6 +79,7 @@ Local Go against `.env`:
 | `APP_ENV` | No | `development` or `production` (default `production`) |
 | `APP_TIMEZONE` | No | IANA TZ for MedQLab datetime → SIMRS wall-clock (falls back to `TZ`, then process local). Examples: `Asia/Jakarta`, `Asia/Makassar`, `Asia/Jayapura`, `Asia/Pontianak` |
 | `MYSQL_PORT` | No | Host port for bundled MariaDB (default `3307`) |
+| `MYSQL_DATA_DIR` | Standalone | Host path for MariaDB files (default `./data/mysql`). Not a Docker named volume. |
 | `MIGRATE_ONLY` | No | If `true`, run migrations then exit |
 
 Copy `.env.example` → `.env` for `simrs`, or `.env.standalone.example` → `.env.standalone` for standalone. Generate a strong API key with `openssl rand -hex 32` if needed.
