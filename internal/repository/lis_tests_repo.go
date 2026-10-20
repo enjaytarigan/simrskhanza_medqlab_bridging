@@ -55,6 +55,32 @@ WHERE 1=1`
 	return list, rows.Err()
 }
 
+func (r *LisTestRepo) ActiveIDs(ctx context.Context, lisTestIDs []string) (map[string]struct{}, error) {
+	ids := uniqueNonEmpty(lisTestIDs)
+	out := map[string]struct{}{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	q := `SELECT lis_test_id FROM lis_tests WHERE status='aktif' AND lis_test_id IN (` + placeholders(len(ids)) + `)`
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := r.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = struct{}{}
+	}
+	return out, rows.Err()
+}
+
 func (r *LisTestRepo) GetByID(ctx context.Context, id uint64) (*model.LisTest, error) {
 	row := r.db.QueryRowContext(ctx, `
 SELECT id, lis_test_id, local_code, test_name, status, created_at, updated_at

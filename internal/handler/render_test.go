@@ -22,7 +22,7 @@ func TestInitTemplates(t *testing.T) {
 	if err := initTemplates(); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"templates.html", "bulk_map.html", "panels.html", "nav", "tom_select_assets"} {
+	for _, name := range []string{"templates.html", "bulk_map.html", "panels.html", "catalog.html", "nav", "tom_select_assets"} {
 		if baseTpl.Lookup(name) == nil {
 			t.Fatalf("missing template %q", name)
 		}

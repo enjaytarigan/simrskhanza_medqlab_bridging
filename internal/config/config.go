@@ -7,12 +7,18 @@ import (
 	"time"
 )
 
+const (
+	ModeSIMRS      = "simrs"
+	ModeStandalone = "standalone"
+)
+
 type Config struct {
 	DatabaseDSN  string
 	AuthUsername string
 	AuthPassword string
 	Listen       string
 	Env          string
+	MapperMode   string
 
 	// Timezone is the IANA name used for MedQLab datetime → SIMRS wall-clock conversion
 	// (e.g. Asia/Jakarta, Asia/Makassar, Asia/Jayapura, Asia/Pontianak).
@@ -34,6 +40,10 @@ func Load() (Config, error) {
 		Env:                  envOr("APP_ENV", "production"),
 		MedQLabWebhookAPIKey: strings.TrimSpace(os.Getenv("MEDQLAB_WEBHOOK_API_KEY")),
 		MedQLabBridgingNIP:   strings.TrimSpace(os.Getenv("MEDQLAB_BRIDGING_NIP")),
+		MapperMode:           strings.ToLower(envOr("MAPPER_MODE", ModeSIMRS)),
+	}
+	if cfg.MapperMode != ModeSIMRS && cfg.MapperMode != ModeStandalone {
+		return cfg, fmt.Errorf("MAPPER_MODE must be %s or %s", ModeSIMRS, ModeStandalone)
 	}
 	if cfg.DatabaseDSN == "" {
 		return cfg, fmt.Errorf("DATABASE_DSN is required")
@@ -62,6 +72,10 @@ func Load() (Config, error) {
 
 func (c Config) Development() bool {
 	return c.Env == "development"
+}
+
+func (c Config) Standalone() bool {
+	return c.MapperMode == ModeStandalone
 }
 
 func envOr(key, def string) string {

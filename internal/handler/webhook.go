@@ -14,6 +14,14 @@ import (
 const maxWebhookBody = 16 << 20 // 16 MiB
 
 func (s *Server) medqlabHasil(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.Standalone() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"status":  false,
+			"code":    503,
+			"message": "hasil push is disabled in standalone mode",
+		})
+		return
+	}
 	start := time.Now()
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxWebhookBody))
 	if err != nil {

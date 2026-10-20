@@ -1,8 +1,13 @@
 # LIS Khanza Mapper
 
-Standalone Go web app to map **LIS tests** (`lis_tests`) to **SIMRS Khanza** lab templates (`template_laboratorium.id_template`). Uses the same MySQL database as SIMRS.
+Go web app to map **LIS tests** (`lis_tests`) to **SIMRS Khanza** lab templates (`id_template`). Two modes:
 
-It also exposes an API so **MedQLab can push lab results** into SIMRS exam tables and posts the matching lab accounting journal (same pattern as Khanza / AdamLabs).
+| `MAPPER_MODE` | Database | Hasil push |
+|---------------|----------|------------|
+| `simrs` (default) | Same MySQL as SIMRS Khanza | `POST /api/v1/medqlab/hasil` writes `periksa_lab` |
+| `standalone` | Bundled MariaDB owned by this app | Hasil push returns 503 |
+
+Use **standalone** when HIS IT will not host this app or open the Khanza database (for example puruk-cahu). Bridging then calls `POST /api/v1/mappings/resolve` to fill `testid_simrs`.
 
 
 ## Quick start (Docker)
@@ -16,56 +21,57 @@ cp .env.example .env
 
 Open `http://localhost:8080` and sign in with HTTP Basic auth.
 
-**Migrations** (`lis_tests`, `lis_mapping_tests`, `lis_hasil_inbox`) run automatically every time the app starts.
+**Migrations** (`lis_tests`, `lis_mapping_tests`, `lis_hasil_inbox`, `simrs_panels`, `simrs_templates`) run automatically every time the app starts.
 
-## Local development (Docker)
+## Standalone (no Khanza DB)
 
-Bundled MariaDB + app (good for trying the mapper without touching host MySQL):
+HIS IT does not deploy this app on their server. Run it with its own MariaDB, import the SIMRS catalog, then map LIS tests. puruk-cahu (`medqlabv2_bridging`) looks up `id_template` at getResult time.
 
 ```bash
 cp .env.example .env
-# Edit AUTH_USERNAME / AUTH_PASSWORD
-./scripts/run-local.sh
+# Set AUTH_USERNAME, AUTH_PASSWORD, MEDQLAB_WEBHOOK_API_KEY
+docker compose -f docker-compose.standalone.yml up -d --build
 ```
 
 - App: `http://localhost:8080`
-- MariaDB: `localhost:3307` (user `mapper`, password `mapper`, database `sik`)
+- MariaDB: `localhost:3307` (user `mapper`, password `mapper`, database `mapper`)
 
-Use your host SIMRS database instead:
+Catalog CSV columns (re-import updates by `id_template`):
 
-```bash
-./scripts/run-local.sh --external-db
+```
+id_template,pemeriksaan,satuan,urut,kd_jenis_prw,nm_perawatan,biaya_item,kategori,total_byr,status
 ```
 
-Set `DATABASE_DSN` in `.env` to reach MySQL on the host, e.g. `...@tcp(host.docker.internal:3306)/sik?...`.
+Keep **one active mapping per LIS test**. If a test maps to several templates, include the ordered `id_template` or `kd_jenis_prw` in `order_ids` so resolve can pick one. Ambiguous or unmapped tests are not guessed.
 
 ## Docker Compose files
 
 | File | Purpose |
 |------|---------|
-| `docker-compose.yml` | App service; connects via `DATABASE_DSN` in `.env` |
-| `docker-compose.local.yml` | Adds MariaDB and default DSN for local stack |
+| `docker-compose.yml` | App only; `simrs` mode, `DATABASE_DSN` is Khanza MySQL |
+| `docker-compose.standalone.yml` | App + MariaDB; no Khanza DB |
 
-Production / deploy:
+Khanza-connected deploy:
 
 ```bash
 docker compose up -d --build
 ```
 
-Local stack:
+Local Go against `.env`:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+./scripts/run-local.sh
 ```
 
 ## Configuration
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DATABASE_DSN` | Yes | MySQL DSN (same DB as SIMRS) |
+| `MAPPER_MODE` | No | `simrs` (default) or `standalone` |
+| `DATABASE_DSN` | Yes | MySQL DSN (Khanza DB in `simrs` mode; mapper DB in `standalone`) |
 | `AUTH_USERNAME` | Yes | HTTP Basic user (UI + mapping API) |
 | `AUTH_PASSWORD` | Yes | HTTP Basic password |
-| `MEDQLAB_WEBHOOK_API_KEY` | For MedQLab push | API key for `POST /api/v1/medqlab/hasil` |
+| `MEDQLAB_WEBHOOK_API_KEY` | For hasil push and resolve | API key for `POST /api/v1/medqlab/hasil` and `POST /api/v1/mappings/resolve` |
 | `MEDQLAB_BRIDGING_NIP` | Fallback | Used for `periksa_lab.nip` only when payload has no `idEmployeeVerify` on verified leaves |
 | `APP_LISTEN` | No | Default `:8080` (use `:8080` in Docker) |
 | `APP_PORT` | No | Host port published by Compose (default `8080`) |
@@ -90,6 +96,7 @@ HTTP Basic auth (`AUTH_USERNAME` / `AUTH_PASSWORD`):
 | `/` | Dashboard |
 | `/lis-tests` | Manage LIS tests |
 | `/templates` | Browse SIMRS templates |
+| `/catalog` | Standalone only: CSV import and add one template |
 | `/map/bulk` | Bulk map LIS → templates |
 | `/mappings` | View / edit mappings |
 | `/bridging-logs` | Audit log of pushed hasil |
@@ -97,7 +104,27 @@ HTTP Basic auth (`AUTH_USERNAME` / `AUTH_PASSWORD`):
 
 ## API
 
-JSON under `/api/v1` (Basic auth). Endpoints cover LIS tests, SIMRS templates/panels, and bulk mappings.
+JSON under `/api/v1` (Basic auth). Endpoints cover LIS tests, SIMRS templates/panels, catalog import (standalone), and bulk mappings.
+
+### Resolve mapping (puruk-cahu)
+
+API key auth (`X-API-Key` or `Authorization: Bearer`). Returns `id_template` for each MedQLab `testId`.
+
+```http
+POST /api/v1/mappings/resolve
+Content-Type: application/json
+X-API-Key: <MEDQLAB_WEBHOOK_API_KEY>
+```
+
+```json
+{
+  "tests": [
+    { "test_id": "12345", "local_code": "HB", "order_ids": ["1001"] }
+  ]
+}
+```
+
+Each result is `{ "test_id", "id_template", "kd_jenis_prw", "pemeriksaan", "status" }` where `status` is `mapped`, `unmapped`, or `ambiguous`. Selection: active `lis_test_id`, else a unique `local_code`; one mapping wins; several mappings keep the one whose `id_template` or `kd_jenis_prw` is in `order_ids`.
 
 ### MedQLab hasil push
 
@@ -113,15 +140,16 @@ Also accepted: `Authorization: Bearer <MEDQLAB_WEBHOOK_API_KEY>`.
 
 On success the service resolves the SIMRS order, maps examinations via `lis_mapping_tests`, and writes `periksa_lab` / `detail_periksa_lab` / `saran_kesan_lab`. Tarif mirrors native Khanza (`DlgPeriksaLaboratorium`): mode `tindakan` when `jns_perawatan_lab.total_byr > 0` (charge on `periksa_lab`, detail tariffs **0**); mode `template` when panel `total_byr = 0` but ordered items have `biaya_item` (panel stays **0**, charge on `detail_periksa_lab` so Biaya Periksa = SUM items — e.g. Kimia Klinik 0 + 3×40k = 120k). In mode `template`, ordered templates that carry a tariff but were **not** sent as MedQLab hasil leaves are still inserted as fee-only details with empty `nilai` (Khanza fee-header pattern — e.g. ELEKTROLIT 300k under `106-A-K3` while Na+/K+/CL- hold results). Mode `tindakan` does **not** add fee-only rows (avoids double-count with panel). Journal: panel INSERT in `tindakan` mode, or detail INSERT amounts in `template` mode (hasil + fee-only). Re-push refreshes tarif without posting another journal for existing panels. For new charges only, amounts go to `jurnal` / `detailjurnal` via `set_akun_ralan` or `set_akun_ranap`. It also updates `permintaan_lab.tgl_hasil` / `jam_hasil`, and when MedQLab sends `demographics.collectDate`, updates `tgl_sampel` / `jam_sampel`. `periksa_lab.nip` comes from the latest leaf `idEmployeeVerify` (by `verifiedAt`), falling back to `MEDQLAB_BRIDGING_NIP`. Audit rows go to `lis_hasil_inbox` (visible under **Log Bridging**).
 
-Requires `MEDQLAB_WEBHOOK_API_KEY` in `.env`. NIP is required from payload verify employee id or `MEDQLAB_BRIDGING_NIP` fallback.
+Requires `MEDQLAB_WEBHOOK_API_KEY` in `.env`. NIP is required from payload verify employee id or `MEDQLAB_BRIDGING_NIP` fallback. In `standalone` mode this endpoint returns **503** (no write access to SIMRS exam tables).
 
 ## Tables
 
 Created on app startup (if missing):
 
 - `lis_tests` — LIS `testId` in `lis_test_id` (unique)
-- `lis_mapping_tests` — links `lis_tests.id` → `id_template`, with `kd_jenis_prw` from `template_laboratorium`
+- `lis_mapping_tests` — links `lis_tests.id` → `id_template`, with `kd_jenis_prw`
 - `lis_hasil_inbox` — push audit (payload + post status)
+- `simrs_panels` / `simrs_templates` — local Khanza catalog (used in standalone; extra unused tables in `simrs` mode)
 
 SIMRS tables used for hasil write (must already exist): `permintaan_lab`, `periksa_lab`, `detail_periksa_lab`, `saran_kesan_lab`, `reg_periksa`, `template_laboratorium`, `jns_perawatan_lab`, `set_akun_ralan`, `set_akun_ranap`, `jurnal`, `detailjurnal`.
 

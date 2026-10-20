@@ -15,33 +15,42 @@ import (
 )
 
 type pageData struct {
-	Title        string
-	Flash        string
-	Error        string
-	Stats        model.DashboardStats
-	Panels       []model.Panel
-	Tests        []model.LisTest
-	Test         *model.LisTest
-	Templates    []model.Template
-	Mappings     []model.Mapping
-	BridgingLogs model.BridgingLogListResult
-	BridgingLog  *model.BridgingLog
-	Bulk         bulkPageData
-	Query        map[string]string
-	PrevPage     int
-	NextPage     int
-	HasNext      bool
+	Title         string
+	Flash         string
+	Error         string
+	Standalone    bool
+	Stats         model.DashboardStats
+	Panels        []model.Panel
+	Tests         []model.LisTest
+	Test          *model.LisTest
+	Templates     []model.Template
+	Mappings      []model.Mapping
+	BridgingLogs  model.BridgingLogListResult
+	BridgingLog   *model.BridgingLog
+	Bulk          bulkPageData
+	CatalogImport *model.CatalogImportResult
+	CatalogHeader string
+	CatalogForm   *model.CatalogRow
+	Query         map[string]string
+	PrevPage      int
+	NextPage      int
+	HasNext       bool
 }
 
 type bulkPageData struct {
-	LisTestsPK         uint64
-	KdJenisPrw         string
-	SelectedTemplates  map[string]bool
+	LisTestsPK        uint64
+	KdJenisPrw        string
+	SelectedTemplates map[string]bool
+}
+
+func (s *Server) view(w http.ResponseWriter, name string, data pageData) {
+	data.Standalone = s.cfg.Standalone()
+	render(w, name, data)
 }
 
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
-	stats, _ := repository.Dashboard(r.Context(), s.db)
-	render(w, "dashboard.html", pageData{Title: "Dashboard", Stats: stats})
+	stats, _ := repository.Dashboard(r.Context(), s.db, s.simrs)
+	s.view(w, "dashboard.html", pageData{Title: "Dashboard", Stats: stats})
 }
 
 func (s *Server) lisTestList(w http.ResponseWriter, r *http.Request) {
@@ -52,10 +61,10 @@ func (s *Server) lisTestList(w http.ResponseWriter, r *http.Request) {
 	}
 	list, err := s.lisTests.List(r.Context(), q, status)
 	if err != nil {
-		render(w, "lis_tests.html", pageData{Title: "LIS Tests", Error: err.Error()})
+		s.view(w, "lis_tests.html", pageData{Title: "LIS Tests", Error: err.Error()})
 		return
 	}
-	render(w, "lis_tests.html", pageData{
+	s.view(w, "lis_tests.html", pageData{
 		Title: "LIS Tests",
 		Tests: list,
 		Query: map[string]string{"q": q, "status": status},
@@ -64,7 +73,7 @@ func (s *Server) lisTestList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) lisTestNewForm(w http.ResponseWriter, r *http.Request) {
-	render(w, "lis_test_form.html", pageData{Title: "New LIS Test"})
+	s.view(w, "lis_test_form.html", pageData{Title: "New LIS Test"})
 }
 
 func (s *Server) lisTestCreate(w http.ResponseWriter, r *http.Request) {
@@ -79,7 +88,7 @@ func (s *Server) lisTestCreate(w http.ResponseWriter, r *http.Request) {
 		Status:    "aktif",
 	}
 	if err := s.lisTests.Create(r.Context(), t); err != nil {
-		render(w, "lis_test_form.html", pageData{Title: "New LIS Test", Test: t, Error: err.Error()})
+		s.view(w, "lis_test_form.html", pageData{Title: "New LIS Test", Test: t, Error: err.Error()})
 		return
 	}
 	http.Redirect(w, r, "/lis-tests?flash=created", http.StatusSeeOther)
@@ -93,7 +102,7 @@ func (s *Server) lisTestEditForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	maps, _ := s.mappings.ListByLisTestPK(r.Context(), id)
-	render(w, "lis_test_edit.html", pageData{Title: "Edit LIS Test", Test: t, Mappings: maps, Flash: r.URL.Query().Get("flash")})
+	s.view(w, "lis_test_edit.html", pageData{Title: "Edit LIS Test", Test: t, Mappings: maps, Flash: r.URL.Query().Get("flash")})
 }
 
 func (s *Server) lisTestUpdate(w http.ResponseWriter, r *http.Request) {
@@ -111,7 +120,7 @@ func (s *Server) lisTestUpdate(w http.ResponseWriter, r *http.Request) {
 		t.Status = "aktif"
 	}
 	if err := s.lisTests.Update(r.Context(), t); err != nil {
-		render(w, "lis_test_edit.html", pageData{Title: "Edit LIS Test", Test: t, Error: err.Error()})
+		s.view(w, "lis_test_edit.html", pageData{Title: "Edit LIS Test", Test: t, Error: err.Error()})
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/lis-tests/%d?flash=updated", id), http.StatusSeeOther)
@@ -130,10 +139,10 @@ func (s *Server) templateList(w http.ResponseWriter, r *http.Request) {
 	panels, _ := s.simrs.ListPanels(r.Context(), "", "")
 	templates, err := s.simrs.ListTemplates(r.Context(), kd, q, lisPK, 500)
 	if err != nil {
-		render(w, "templates.html", pageData{Title: "SIMRS Templates", Error: err.Error(), Panels: panels})
+		s.view(w, "templates.html", pageData{Title: "SIMRS Templates", Error: err.Error(), Panels: panels})
 		return
 	}
-	render(w, "templates.html", pageData{
+	s.view(w, "templates.html", pageData{
 		Title:     "SIMRS Templates",
 		Panels:    panels,
 		Templates: templates,
@@ -156,14 +165,14 @@ func (s *Server) panelList(w http.ResponseWriter, r *http.Request) {
 		katQuery = "PK"
 	}
 	if err != nil {
-		render(w, "panels.html", pageData{
+		s.view(w, "panels.html", pageData{
 			Title: "SIMRS Panels",
 			Error: err.Error(),
 			Query: map[string]string{"q": q, "kategori": katQuery},
 		})
 		return
 	}
-	render(w, "panels.html", pageData{
+	s.view(w, "panels.html", pageData{
 		Title:  "SIMRS Panels",
 		Panels: panels,
 		Query:  map[string]string{"q": q, "kategori": katQuery},
@@ -182,10 +191,10 @@ func (s *Server) bulkMapForm(w http.ResponseWriter, r *http.Request) {
 	}
 	templates, err := s.simrs.ListTemplates(r.Context(), kd, q, lisPK, 500)
 	if err != nil {
-		render(w, "bulk_map.html", pageData{Title: "Bulk Map", Error: err.Error(), Panels: panels, Tests: tests})
+		s.view(w, "bulk_map.html", pageData{Title: "Bulk Map", Error: err.Error(), Panels: panels, Tests: tests})
 		return
 	}
-	render(w, "bulk_map.html", pageData{
+	s.view(w, "bulk_map.html", pageData{
 		Title:     "Bulk Map",
 		Panels:    panels,
 		Tests:     tests,
@@ -267,11 +276,11 @@ func (s *Server) mappingList(w http.ResponseWriter, r *http.Request) {
 	idTpl, _ := strconv.Atoi(q.Get("id_template"))
 	list, err := s.mappings.List(r.Context(), lisPK, idTpl, q.Get("kd_jenis_prw"), q.Get("status"))
 	if err != nil {
-		render(w, "mappings.html", pageData{Title: "Mappings", Error: err.Error()})
+		s.view(w, "mappings.html", pageData{Title: "Mappings", Error: err.Error()})
 		return
 	}
 	tests, _ := s.lisTests.List(r.Context(), "", "aktif")
-	render(w, "mappings.html", pageData{
+	s.view(w, "mappings.html", pageData{
 		Title:    "Mappings",
 		Mappings: list,
 		Tests:    tests,
@@ -296,11 +305,11 @@ func (s *Server) bridgingLogList(w http.ResponseWriter, r *http.Request) {
 	const limit = 50
 	result, err := s.bridgingLogs.List(r.Context(), q, status, page, limit)
 	if err != nil {
-		render(w, "bridging_logs.html", pageData{Title: "Log Bridging", Error: err.Error()})
+		s.view(w, "bridging_logs.html", pageData{Title: "Log Bridging", Error: err.Error()})
 		return
 	}
 	hasNext := page*limit < result.Total
-	render(w, "bridging_logs.html", pageData{
+	s.view(w, "bridging_logs.html", pageData{
 		Title:        "Log Bridging",
 		BridgingLogs: result,
 		Query:        map[string]string{"q": q, "status": status},
@@ -314,7 +323,7 @@ func (s *Server) bridgingLogDetail(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseUint(chi.URLParam(r, "id"), 10, 64)
 	row, err := s.bridgingLogs.GetByID(r.Context(), id)
 	if err != nil {
-		render(w, "bridging_log_detail.html", pageData{Title: "Log Bridging", Error: err.Error()})
+		s.view(w, "bridging_log_detail.html", pageData{Title: "Log Bridging", Error: err.Error()})
 		return
 	}
 	if row == nil {
@@ -331,7 +340,7 @@ func (s *Server) bridgingLogDetail(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	render(w, "bridging_log_detail.html", pageData{
+	s.view(w, "bridging_log_detail.html", pageData{
 		Title:       fmt.Sprintf("Log Bridging #%d", row.ID),
 		BridgingLog: row,
 	})

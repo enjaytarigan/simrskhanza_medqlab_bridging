@@ -27,12 +27,13 @@ func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
 	if err := initTemplates(); err != nil {
 		return nil, err
 	}
+	simrs := repository.NewSimrsRepo(db, cfg.Standalone())
 	return &Server{
 		cfg:          cfg,
 		db:           db,
 		lisTests:     repository.NewLisTestRepo(db),
-		mappings:     repository.NewMappingRepo(db),
-		simrs:        repository.NewSimrsRepo(db),
+		mappings:     repository.NewMappingRepo(db, simrs),
+		simrs:        simrs,
 		medqlab:      medqlab.NewService(db, cfg.MedQLabBridgingNIP, cfg.Location),
 		bridgingLogs: repository.NewBridgingLogRepo(db),
 	}, nil
@@ -52,6 +53,7 @@ func (s *Server) Router() http.Handler {
 	r.Group(func(wr chi.Router) {
 		wr.Use(auth.APIKeyMiddleware(s.cfg.MedQLabWebhookAPIKey))
 		wr.Post("/api/v1/medqlab/hasil", s.medqlabHasil)
+		wr.Post("/api/v1/mappings/resolve", s.resolveMappings)
 	})
 
 	r.Group(func(pr chi.Router) {
@@ -71,6 +73,9 @@ func (s *Server) Router() http.Handler {
 
 		pr.Get("/templates", s.templateList)
 		pr.Get("/panels", s.panelList)
+		pr.Get("/catalog", s.catalogForm)
+		pr.Post("/catalog/import", s.catalogImport)
+		pr.Post("/catalog/templates", s.catalogTemplateCreate)
 		pr.Get("/map/bulk", s.bulkMapForm)
 		pr.Post("/map/bulk", s.bulkMapSubmit)
 
@@ -90,6 +95,8 @@ func (s *Server) Router() http.Handler {
 
 			api.Get("/simrs/panels", s.apiListPanels)
 			api.Get("/simrs/templates", s.apiListTemplates)
+			api.Post("/simrs/catalog", s.apiImportCatalog)
+			api.Post("/simrs/templates", s.apiCreateCatalogTemplate)
 
 			api.Get("/mappings", s.apiListMappings)
 			api.Post("/mappings/bulk", s.apiBulkMap)

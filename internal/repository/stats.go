@@ -7,10 +7,12 @@ import (
 	"lis-khanza-mapper/internal/model"
 )
 
-func Dashboard(ctx context.Context, db *sql.DB) (model.DashboardStats, error) {
+func Dashboard(ctx context.Context, db *sql.DB, simrs *SimrsRepo) (model.DashboardStats, error) {
 	var s model.DashboardStats
 	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM lis_tests WHERE status='aktif'`).Scan(&s.LisTestsActive)
 	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM lis_mapping_tests WHERE status='aktif'`).Scan(&s.MappingsActive)
-	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM template_laboratorium`).Scan(&s.TemplateCount)
+	if simrs != nil {
+		s.TemplateCount, _ = simrs.CountTemplates(ctx)
+	}
 	return s, nil
 }

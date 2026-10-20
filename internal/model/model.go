@@ -3,14 +3,14 @@ package model
 import "time"
 
 type LisTest struct {
-	ID         uint64
-	LisTestID  string
-	LocalCode  string
-	TestName   string
-	Status     string
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	MapCount   int
+	ID        uint64
+	LisTestID string
+	LocalCode string
+	TestName  string
+	Status    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	MapCount  int
 }
 
 type Panel struct {
@@ -81,4 +81,26 @@ type BulkMapResult struct {
 	Created int
 	Updated int
 	Skipped int
+}
+
+type CatalogRow struct {
+	IDTemplate  int     `json:"id_template"`
+	Pemeriksaan string  `json:"pemeriksaan"`
+	Satuan      string  `json:"satuan"`
+	Urut        int     `json:"urut"`
+	KdJenisPrw  string  `json:"kd_jenis_prw"`
+	NmPerawatan string  `json:"nm_perawatan"`
+	BiayaItem   float64 `json:"biaya_item"`
+	Kategori    string  `json:"kategori"`
+	TotalByr    float64 `json:"total_byr"`
+	Status      string  `json:"status"`
+}
+
+type CatalogImportResult struct {
+	PanelsCreated    int      `json:"panels_created"`
+	PanelsUpdated    int      `json:"panels_updated"`
+	TemplatesCreated int      `json:"templates_created"`
+	TemplatesUpdated int      `json:"templates_updated"`
+	Skipped          int      `json:"skipped"`
+	Errors           []string `json:"errors,omitempty"`
 }

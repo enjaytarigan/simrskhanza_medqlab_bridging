@@ -1,0 +1,144 @@
+{{define "catalog.html"}}
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} — LIS Khanza Mapper</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    nav a { margin-right: 1rem; }
+    .flash { color: green; }
+    .err { color: #c00; }
+    code { font-size: 0.85em; }
+    .cols { display: flex; flex-wrap: wrap; gap: 0.35rem 0.5rem; margin: 0 0 1rem; }
+    .cols span { background: var(--pico-code-background, rgba(127,127,127,.15)); padding: 0.15rem 0.45rem; border-radius: 0.35rem; font-family: var(--pico-font-family-monospace, monospace); font-size: 0.85em; }
+    fieldset { margin-bottom: 0.5rem; }
+    fieldset legend { font-weight: 600; }
+    form.template-form button[type="submit"] { width: auto; }
+    .file-row { display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: end; }
+    @media (max-width: 720px) {
+      .file-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<main class="container">
+{{template "nav" .}}
+<h1>{{.Title}}</h1>
+{{if .Flash}}<p class="flash">{{.Flash}}</p>{{end}}
+{{if .Error}}<p class="err">{{.Error}}</p>{{end}}
+{{if .CatalogImport}}
+<p class="flash">Import: templates created {{.CatalogImport.TemplatesCreated}}, updated {{.CatalogImport.TemplatesUpdated}};
+panels created {{.CatalogImport.PanelsCreated}}, updated {{.CatalogImport.PanelsUpdated}}; skipped {{.CatalogImport.Skipped}}.</p>
+{{if .CatalogImport.Errors}}<ul class="err">{{range .CatalogImport.Errors}}<li>{{.}}</li>{{end}}</ul>{{end}}
+{{end}}
+
+<article>
+  <header>CSV import</header>
+  <p>Header row must include these columns. Re-import updates an existing row by <code>id_template</code>.</p>
+  <div class="cols">
+    <span>id_template</span>
+    <span>pemeriksaan</span>
+    <span>satuan</span>
+    <span>urut</span>
+    <span>kd_jenis_prw</span>
+    <span>nm_perawatan</span>
+    <span>biaya_item</span>
+    <span>kategori</span>
+    <span>total_byr</span>
+    <span>status</span>
+  </div>
+  <form method="post" action="/catalog/import" enctype="multipart/form-data">
+    <div class="file-row">
+      <label>CSV file
+        <input type="file" name="file" accept=".csv,text/csv" required>
+      </label>
+      <button type="submit">Import CSV</button>
+    </div>
+  </form>
+</article>
+
+<article>
+  <header>Add one template</header>
+  <p>Use this when HIS only sends a few template IDs. Map the LIS test afterwards under <a href="/map/bulk">Bulk Map</a>.</p>
+  <form method="post" action="/catalog/templates" class="template-form" autocomplete="off">
+    <fieldset>
+      <legend>Template</legend>
+      <div class="grid">
+        <label for="id_template">Template ID *
+          <input id="id_template" name="id_template" type="number" min="1" step="1" required inputmode="numeric" placeholder="1001"
+            value="{{if and .CatalogForm (ne .CatalogForm.IDTemplate 0)}}{{.CatalogForm.IDTemplate}}{{end}}">
+          <small>Khanza <code>id_template</code> — this becomes <code>testid_simrs</code></small>
+        </label>
+        <label for="pemeriksaan">Pemeriksaan *
+          <input id="pemeriksaan" name="pemeriksaan" required placeholder="Hemoglobin"
+            value="{{if .CatalogForm}}{{.CatalogForm.Pemeriksaan}}{{end}}">
+        </label>
+      </div>
+      <div class="grid">
+        <label for="satuan">Satuan
+          <input id="satuan" name="satuan" placeholder="g/dL"
+            value="{{if .CatalogForm}}{{.CatalogForm.Satuan}}{{end}}">
+        </label>
+        <label for="urut">Urutan
+          <input id="urut" name="urut" type="number" min="0" step="1"
+            value="{{if .CatalogForm}}{{.CatalogForm.Urut}}{{else}}0{{end}}">
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Panel</legend>
+      <div class="grid">
+        <label for="kd_jenis_prw">Kode panel *
+          <input id="kd_jenis_prw" name="kd_jenis_prw" required placeholder="PK-01"
+            value="{{if .CatalogForm}}{{.CatalogForm.KdJenisPrw}}{{end}}">
+          <small>Khanza <code>kd_jenis_prw</code></small>
+        </label>
+        <label for="nm_perawatan">Nama panel
+          <input id="nm_perawatan" name="nm_perawatan" placeholder="Hematologi"
+            value="{{if .CatalogForm}}{{.CatalogForm.NmPerawatan}}{{end}}">
+          <small>Leave empty to copy the kode panel</small>
+        </label>
+      </div>
+      <div class="grid">
+        <label for="kategori">Kategori
+          <select id="kategori" name="kategori">
+            <option value="PK" {{if or (not .CatalogForm) (eq .CatalogForm.Kategori "PK") (eq .CatalogForm.Kategori "")}}selected{{end}}>PK — Patologi Klinik</option>
+            <option value="PA" {{if and .CatalogForm (eq .CatalogForm.Kategori "PA")}}selected{{end}}>PA — Patologi Anatomi</option>
+            <option value="MB" {{if and .CatalogForm (eq .CatalogForm.Kategori "MB")}}selected{{end}}>MB — Mikrobiologi</option>
+          </select>
+        </label>
+        <label for="status">Status
+          <select id="status" name="status">
+            <option value="1" {{if or (not .CatalogForm) (ne .CatalogForm.Status "0")}}selected{{end}}>Aktif</option>
+            <option value="0" {{if and .CatalogForm (eq .CatalogForm.Status "0")}}selected{{end}}>Nonaktif</option>
+          </select>
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Tarif</legend>
+      <div class="grid">
+        <label for="biaya_item">Biaya item
+          <input id="biaya_item" name="biaya_item" type="number" min="0" step="1"
+            value="{{if .CatalogForm}}{{.CatalogForm.BiayaItem}}{{else}}0{{end}}">
+          <small><code>biaya_item</code> on the template</small>
+        </label>
+        <label for="total_byr">Harga panel
+          <input id="total_byr" name="total_byr" type="number" min="0" step="1"
+            value="{{if .CatalogForm}}{{.CatalogForm.TotalByr}}{{else}}0{{end}}">
+          <small><code>total_byr</code>. 0 means charge by item</small>
+        </label>
+      </div>
+    </fieldset>
+
+    <button type="submit">Save template</button>
+  </form>
+</article>
+</main>
+</body>
+</html>
+{{end}}

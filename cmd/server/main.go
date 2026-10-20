@@ -53,7 +53,7 @@ func main() {
 		if tzLabel == "" {
 			tzLabel = "Local"
 		}
-		log.Printf("listening on %s (env=%s timezone=%s)", cfg.Listen, cfg.Env, tzLabel)
+		log.Printf("listening on %s (env=%s mode=%s timezone=%s)", cfg.Listen, cfg.Env, cfg.MapperMode, tzLabel)
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("listen: %v", err)
 		}
