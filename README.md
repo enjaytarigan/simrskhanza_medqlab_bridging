@@ -28,7 +28,7 @@ Open `http://localhost:8080` and sign in with HTTP Basic auth.
 HIS IT does not deploy this app on their server. Run it with its own MariaDB, import the SIMRS catalog, then map LIS tests. puruk-cahu (`medqlabv2_bridging`) looks up `id_template` at getResult time.
 
 ```bash
-cp .env.example .env
+cp .env.standalone.example .env.standalone
 # Set AUTH_USERNAME, AUTH_PASSWORD, MEDQLAB_WEBHOOK_API_KEY
 docker compose -f docker-compose.standalone.yml up -d --build
 ```
@@ -46,10 +46,10 @@ Keep **one active mapping per LIS test**. If a test maps to several templates, i
 
 ## Docker Compose files
 
-| File | Purpose |
-|------|---------|
-| `docker-compose.yml` | App only; `simrs` mode, `DATABASE_DSN` is Khanza MySQL |
-| `docker-compose.standalone.yml` | App + MariaDB; no Khanza DB |
+| File | Env | Purpose |
+|------|-----|---------|
+| `docker-compose.yml` | `.env` from `.env.example` | App only; Khanza MySQL |
+| `docker-compose.standalone.yml` | `.env.standalone` from `.env.standalone.example` | App + MariaDB; no Khanza DB |
 
 Khanza-connected deploy:
 
@@ -80,7 +80,7 @@ Local Go against `.env`:
 | `MYSQL_PORT` | No | Host port for bundled MariaDB (default `3307`) |
 | `MIGRATE_ONLY` | No | If `true`, run migrations then exit |
 
-Copy from `.env.example`. Generate a strong API key with `openssl rand -hex 32` if needed.
+Copy `.env.example` → `.env` for `simrs`, or `.env.standalone.example` → `.env.standalone` for standalone. Generate a strong API key with `openssl rand -hex 32` if needed.
 
 ## Health
 

@@ -5,8 +5,9 @@ cd "${ROOT}"
 
 ENV_FILE="${ROOT}/.env"
 if [[ ! -f "${ENV_FILE}" ]]; then
-  echo "Missing ${ENV_FILE}. Create it from the example:" >&2
-  echo "  cp .env.example .env" >&2
+  echo "Missing ${ENV_FILE}. Create it from the example for this mode:" >&2
+  echo "  cp .env.example .env                 # simrs (Khanza MySQL)" >&2
+  echo "  cp .env.standalone.example .env      # standalone (own MariaDB)" >&2
   exit 1
 fi
 
