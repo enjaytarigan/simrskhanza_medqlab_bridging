@@ -1,3 +1,8 @@
+# Interpolation of APP_PORT / MYSQL_PORT / MYSQL_DATA_DIR comes from --env-file,
+# not from the service env_file. Always pass .env.standalone:
+#
+#   docker compose --env-file .env.standalone -f docker-compose.standalone.yml up -d --build
+
 services:
   mysql:
     image: mariadb:11
@@ -29,11 +34,10 @@ services:
       mysql:
         condition: service_healthy
     ports:
-      - "${APP_PORT:-8080}:8080"
+      - "${APP_PORT:-8080}:${APP_PORT:-8080}"
     env_file:
       - .env.standalone
     environment:
-      APP_LISTEN: ":8080"
-      APP_ENV: production
+      APP_LISTEN: ":${APP_PORT:-8080}"
       MAPPER_MODE: standalone
       DATABASE_DSN: mapper:mapper@tcp(mysql:3306)/mapper?parseTime=true&loc=Local&charset=utf8mb4

@@ -29,11 +29,13 @@ HIS IT does not deploy this app on their server. Run it with its own MariaDB, im
 
 ```bash
 cp .env.standalone.example .env.standalone
-# Set AUTH_USERNAME, AUTH_PASSWORD, MEDQLAB_WEBHOOK_API_KEY
-docker compose -f docker-compose.standalone.yml up -d --build
+# Set AUTH_USERNAME, AUTH_PASSWORD, MEDQLAB_WEBHOOK_API_KEY, APP_PORT
+docker compose --env-file .env.standalone -f docker-compose.standalone.yml up -d --build
 ```
 
-- App: `http://localhost:8080`
+`--env-file` is required so `APP_PORT` / `MYSQL_PORT` / `MYSQL_DATA_DIR` apply to published ports (service `env_file` alone does not).
+
+- App: `http://localhost:${APP_PORT:-8080}`
 - MariaDB: `localhost:3307` (user `mapper`, password `mapper`, database `mapper`)
 - Data: host directory `./data/mysql` (`MYSQL_DATA_DIR`)
 
