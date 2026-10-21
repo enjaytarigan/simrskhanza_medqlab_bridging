@@ -38,9 +38,7 @@ type pageData struct {
 }
 
 type bulkPageData struct {
-	LisTestsPK        uint64
-	KdJenisPrw        string
-	SelectedTemplates map[string]bool
+	LisTestsPK uint64
 }
 
 func (s *Server) view(w http.ResponseWriter, name string, data pageData) {
@@ -180,33 +178,20 @@ func (s *Server) panelList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) bulkMapForm(w http.ResponseWriter, r *http.Request) {
-	panels, _ := s.simrs.ListPanels(r.Context(), "", "")
 	tests, _ := s.lisTests.List(r.Context(), "", "aktif")
 	lisPK, _ := strconv.ParseUint(r.URL.Query().Get("lis_tests_pk"), 10, 64)
-	kd := r.URL.Query().Get("kd_jenis_prw")
-	q := r.URL.Query().Get("q")
-	selected := map[string]bool{}
-	for _, v := range r.URL.Query()["id_template"] {
-		selected[v] = true
-	}
-	templates, err := s.simrs.ListTemplates(r.Context(), kd, q, lisPK, 500)
+	templates, err := s.simrs.ListTemplates(r.Context(), "", "", 0, 10000)
 	if err != nil {
-		s.view(w, "bulk_map.html", pageData{Title: "Bulk Map", Error: err.Error(), Panels: panels, Tests: tests})
+		s.view(w, "bulk_map.html", pageData{Title: "Bulk Map", Error: err.Error(), Tests: tests})
 		return
 	}
 	s.view(w, "bulk_map.html", pageData{
 		Title:     "Bulk Map",
-		Panels:    panels,
 		Tests:     tests,
 		Templates: templates,
-		Bulk: bulkPageData{
-			LisTestsPK:        lisPK,
-			KdJenisPrw:        kd,
-			SelectedTemplates: selected,
-		},
-		Query: map[string]string{"kd_jenis_prw": kd, "q": q},
-		Flash: r.URL.Query().Get("flash"),
-		Error: r.URL.Query().Get("error"),
+		Bulk:      bulkPageData{LisTestsPK: lisPK},
+		Flash:     r.URL.Query().Get("flash"),
+		Error:     r.URL.Query().Get("error"),
 	})
 }
 
@@ -216,8 +201,6 @@ func (s *Server) bulkMapSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	lisPK, _ := strconv.ParseUint(r.FormValue("lis_tests_pk"), 10, 64)
-	kdFilter := strings.TrimSpace(r.FormValue("kd_jenis_prw"))
-	qSearch := strings.TrimSpace(r.FormValue("q"))
 	var idTemplates []int
 	for _, v := range r.Form["id_template"] {
 		id, err := strconv.Atoi(v)
@@ -227,17 +210,8 @@ func (s *Server) bulkMapSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	redirectBack := func(errMsg string) {
 		vals := url.Values{}
-		if kdFilter != "" {
-			vals.Set("kd_jenis_prw", kdFilter)
-		}
-		if qSearch != "" {
-			vals.Set("q", qSearch)
-		}
 		if lisPK > 0 {
 			vals.Set("lis_tests_pk", strconv.FormatUint(lisPK, 10))
-		}
-		for _, id := range idTemplates {
-			vals.Add("id_template", strconv.Itoa(id))
 		}
 		if errMsg != "" {
 			vals.Set("error", errMsg)
@@ -260,12 +234,6 @@ func (s *Server) bulkMapSubmit(w http.ResponseWriter, r *http.Request) {
 	flash := fmt.Sprintf("Saved: %d created, %d updated, %d skipped", res.Created, res.Updated, res.Skipped)
 	vals := url.Values{}
 	vals.Set("flash", flash)
-	if kdFilter != "" {
-		vals.Set("kd_jenis_prw", kdFilter)
-	}
-	if qSearch != "" {
-		vals.Set("q", qSearch)
-	}
 	vals.Set("lis_tests_pk", strconv.FormatUint(lisPK, 10))
 	http.Redirect(w, r, "/map/bulk?"+vals.Encode(), http.StatusSeeOther)
 }

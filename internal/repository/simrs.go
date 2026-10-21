@@ -96,8 +96,11 @@ ORDER BY j.nm_perawatan, j.kd_jenis_prw`
 }
 
 func (r *SimrsRepo) ListTemplates(ctx context.Context, kdJenisPrw, q string, lisTestsPK uint64, limit int) ([]model.Template, error) {
-	if limit <= 0 || limit > 500 {
+	if limit <= 0 {
 		limit = 500
+	}
+	if limit > 10000 {
+		limit = 10000
 	}
 	sqlQ := fmt.Sprintf(`
 SELECT t.id_template, %s, t.satuan, IFNULL(t.urut,0), t.kd_jenis_prw, j.nm_perawatan,

@@ -3,15 +3,20 @@
 <style>
   .ts-wrapper { margin-bottom: 0; }
   .ts-control { min-height: calc(1rem * 1.5 + var(--pico-form-element-spacing-vertical, 0.75rem) * 2 + 2px); }
+  .ts-control.multi { flex-wrap: wrap; }
   .ts-dropdown { z-index: 100; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/tom-select@2.4.3/dist/js/tom-select.complete.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
   document.querySelectorAll('select[data-searchable]').forEach(function (el) {
+    var multiple = !!el.multiple;
     new TomSelect(el, {
-      allowEmptyOption: true,
+      allowEmptyOption: !multiple,
       create: false,
+      maxOptions: null,
+      hideSelected: multiple,
+      plugins: multiple ? ['remove_button'] : [],
       sortField: { field: 'text', direction: 'asc' },
       placeholder: el.getAttribute('data-placeholder') || 'Search…'
     });
