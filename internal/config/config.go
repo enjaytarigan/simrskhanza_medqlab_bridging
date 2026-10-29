@@ -29,6 +29,15 @@ type Config struct {
 	// MedQLab push webhook (optional — endpoint returns 503 if API key unset).
 	MedQLabWebhookAPIKey string
 	MedQLabBridgingNIP   string
+
+	// Order poller (simrs mode only). Posts permintaan_lab to MedQLab saveOrder.
+	OrderPoll         bool
+	MedQLabBaseURL    string
+	MedQLabXCons      string
+	MedQLabXSign      string
+	OrderPollSince    time.Time
+	OrderPollInterval time.Duration
+	OrderClaimTimeout time.Duration
 }
 
 func Load() (Config, error) {
@@ -67,7 +76,39 @@ func Load() (Config, error) {
 		cfg.Location = time.Local
 	}
 
+	if err := loadOrderPoll(&cfg); err != nil {
+		return cfg, err
+	}
+
 	return cfg, nil
+}
+
+func loadOrderPoll(cfg *Config) error {
+	cfg.OrderPoll = envBool("MEDQLAB_ORDER_POLL", false)
+	cfg.MedQLabBaseURL = strings.TrimRight(strings.TrimSpace(os.Getenv("MEDQLAB_BASE_URL")), "/")
+	cfg.MedQLabXCons = strings.TrimSpace(os.Getenv("MEDQLAB_X_CONS"))
+	cfg.MedQLabXSign = os.Getenv("MEDQLAB_X_SIGN")
+	cfg.OrderPollInterval = envDuration("MEDQLAB_ORDER_INTERVAL", 5*time.Second)
+	cfg.OrderClaimTimeout = envDuration("MEDQLAB_ORDER_CLAIM_TIMEOUT", 2*time.Minute)
+	if !cfg.OrderPoll {
+		return nil
+	}
+	if cfg.MapperMode != ModeSIMRS {
+		return fmt.Errorf("MEDQLAB_ORDER_POLL requires MAPPER_MODE=%s", ModeSIMRS)
+	}
+	if cfg.MedQLabBaseURL == "" || cfg.MedQLabXCons == "" || strings.TrimSpace(cfg.MedQLabXSign) == "" {
+		return fmt.Errorf("MEDQLAB_ORDER_POLL requires MEDQLAB_BASE_URL, MEDQLAB_X_CONS, and MEDQLAB_X_SIGN")
+	}
+	sinceRaw := strings.TrimSpace(os.Getenv("MEDQLAB_ORDER_SINCE"))
+	if sinceRaw == "" {
+		return fmt.Errorf("MEDQLAB_ORDER_POLL requires MEDQLAB_ORDER_SINCE (yyyy-MM-dd)")
+	}
+	since, err := time.ParseInLocation("2006-01-02", sinceRaw, cfg.Location)
+	if err != nil {
+		return fmt.Errorf("MEDQLAB_ORDER_SINCE must be yyyy-MM-dd: %w", err)
+	}
+	cfg.OrderPollSince = since
+	return nil
 }
 
 func (c Config) Development() bool {
@@ -83,4 +124,31 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func envBool(key string, def bool) bool {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def
+	}
+	switch strings.ToLower(v) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return def
+	}
+}
+
+func envDuration(key string, def time.Duration) time.Duration {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return def
+	}
+	return d
 }

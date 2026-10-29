@@ -12,6 +12,7 @@ LIS Khanza Mapper adalah aplikasi web Go yang:
 
 1. Memetakan tes laboratorium dari **LIS** ke template laboratorium **SIMRS Khanza** (`template_laboratorium`)
 2. Menyediakan API agar **MedQLab dapat push hasil lab** ke SIMRS (`periksa_lab`, `detail_periksa_lab`, `saran_kesan_lab`) dan mencatat jurnal akuntansi (`jurnal` / `detailjurnal`) dari tarif INSERT baru, memakai COA `set_akun_ralan` / `set_akun_ranap`
+3. (Opsional) Membaca order baru di `permintaan_lab` dan mengirimnya ke MedQLab `saveOrder`, lalu mencatat nomor lab di `lis_order_outbox`
 
 Aplikasi menggunakan **database MySQL/MariaDB produksi SIMRS** yang sudah berjalan di rumah sakit.
 
@@ -20,7 +21,7 @@ Aplikasi menggunakan **database MySQL/MariaDB produksi SIMRS** yang sudah berjal
 | Runtime | Container Docker; **image dibangun di server produksi** dari `Dockerfile` (`docker compose build`) |
 | Orkestrasi | Docker Compose |
 | Database | MySQL/MariaDB SIMRS (eksternal terhadap container aplikasi) |
-| Migrasi DB | Berjalan **otomatis** setiap kali aplikasi start (`lis_tests`, `lis_mapping_tests`, `lis_hasil_inbox`) |
+| Migrasi DB | Berjalan **otomatis** setiap kali aplikasi start (`lis_tests`, `lis_mapping_tests`, `lis_hasil_inbox`, `lis_order_outbox`) |
 | Autentikasi UI/API mapping | HTTP Basic Auth (`AUTH_USERNAME` / `AUTH_PASSWORD`) |
 | Autentikasi push hasil | API key (`MEDQLAB_WEBHOOK_API_KEY`) |
 | UI audit | `/bridging-logs` — log hasil yang di-push |
@@ -153,6 +154,13 @@ DATABASE_DSN=spv:server@tcp(192.168.1.10:3306)/sik?parseTime=true&loc=Local&char
 | `AUTH_PASSWORD` | Ya | — | Password HTTP Basic Auth |
 | `MEDQLAB_WEBHOOK_API_KEY` | Untuk push hasil | — | API key `POST /api/v1/medqlab/hasil`. Jika kosong → HTTP 503 |
 | `MEDQLAB_BRIDGING_NIP` | Fallback | — | NIP untuk `periksa_lab.nip` jika payload tidak punya `idEmployeeVerify` |
+| `MEDQLAB_ORDER_POLL` | Tidak | `false` | `true` untuk mengirim order Khanza ke MedQLab (`simrs` saja) |
+| `MEDQLAB_BASE_URL` | Jika poll on | — | Origin MedQLab (tanpa trailing slash) |
+| `MEDQLAB_X_CONS` | Jika poll on | — | Header `X-cons` (cons id Khanza) |
+| `MEDQLAB_X_SIGN` | Jika poll on | — | Header `X-sign` (secret mentah, bukan HMAC) |
+| `MEDQLAB_ORDER_SINCE` | Jika poll on | — | `yyyy-MM-dd`; hanya order dengan `tgl_permintaan` pada/sesudah tanggal ini |
+| `MEDQLAB_ORDER_INTERVAL` | Tidak | `5s` | Jeda antar tick poller |
+| `MEDQLAB_ORDER_CLAIM_TIMEOUT` | Tidak | `2m` | Klaim `00` yang macet boleh diambil ulang setelah durasi ini |
 | `APP_LISTEN` | Tidak | `:8080` | Bind di dalam container (gunakan `:8080`) |
 | `APP_PORT` | Tidak | `8080` | Port yang dipublish ke host |
 | `APP_ENV` | Tidak | `production` | Tetap `production` di server produksi |
@@ -162,7 +170,7 @@ DATABASE_DSN=spv:server@tcp(192.168.1.10:3306)/sik?parseTime=true&loc=Local&char
 |----------|-----------|
 | `MIGRATE_ONLY=true` | Hanya jalankan migrasi lalu keluar (pemeliharaan/troubleshooting) |
 
-> **Migrasi:** Tabel `lis_tests`, `lis_mapping_tests`, dan `lis_hasil_inbox` dibuat/diperbarui **otomatis** saat aplikasi start. Tidak perlu menjalankan skrip SQL manual pada deployment rutin.
+> **Migrasi:** Tabel `lis_tests`, `lis_mapping_tests`, `lis_hasil_inbox`, dan `lis_order_outbox` dibuat/diperbarui **otomatis** saat aplikasi start. Tidak perlu menjalankan skrip SQL manual pada deployment rutin.
 
 ### 5.3 Keamanan rahasia (secret)
 
@@ -203,13 +211,13 @@ docker compose up -d --build
 
 | Hak | Objek |
 |-----|--------|
-| **SELECT** | `template_laboratorium`, `jns_perawatan_lab`, `permintaan_lab`, `reg_periksa`, `set_akun_ralan`, `set_akun_ranap` |
-| **CREATE / ALTER / INSERT / UPDATE / SELECT** | `lis_tests`, `lis_mapping_tests`, `lis_hasil_inbox` |
+| **SELECT** | `template_laboratorium`, `jns_perawatan_lab`, `permintaan_lab`, `permintaan_pemeriksaan_lab`, `permintaan_detail_permintaan_lab`, `reg_periksa`, `pasien`, `dokter`, `penjab`, `poliklinik`, `kamar_inap`, `kamar`, `bangsal`, `set_akun_ralan`, `set_akun_ranap` |
+| **CREATE / ALTER / INSERT / UPDATE / SELECT** | `lis_tests`, `lis_mapping_tests`, `lis_hasil_inbox`, `lis_order_outbox` |
 | **INSERT / UPDATE / SELECT** | `periksa_lab`, `detail_periksa_lab`, `saran_kesan_lab` |
 | **INSERT / SELECT** | `jurnal`, `detailjurnal` |
 | **UPDATE** | `permintaan_lab` (kolom `tgl_hasil` / `jam_hasil`; plus `tgl_sampel` / `jam_sampel` jika ada `collectDate`) |
 
-2. Mapping LIS ↔ template dikelola lewat UI; hasil lab ditulis otomatis saat MedQLab push ke API.
+2. Mapping LIS ↔ template dikelola lewat UI; hasil lab ditulis otomatis saat MedQLab push ke API. Poller order (jika diaktifkan) membaca `permintaan_lab` dan menulis `lis_order_outbox`.
 
 ### 6.2 Build di server dan jalankan
 
@@ -296,6 +304,8 @@ docker compose down
 | Push hasil `401` | API key salah | Periksa `MEDQLAB_WEBHOOK_API_KEY` |
 | Push hasil `503` | Key/NIP belum di-set | Isi `MEDQLAB_WEBHOOK_API_KEY` dan `MEDQLAB_BRIDGING_NIP`, restart |
 | Hasil tidak masuk SIMRS | Order/mapping tidak cocok | Cek log app dan UI `/bridging-logs` |
+| Order tidak masuk MedQLab | Poller off / since terlalu baru / outbox `failed` | Set `MEDQLAB_ORDER_POLL=true` dan `MEDQLAB_ORDER_SINCE`; cek log `[orderpoll]` dan `lis_order_outbox` |
+| Order terkirim ganda | `ApiMEDQLAB` Khanza dan poller sama-sama aktif | Matikan kirim order dari UI Khanza untuk order yang di-poll mapper |
 
 ```bash
 docker compose ps
@@ -313,6 +323,7 @@ cd lis-khanza-mapper
 
 cp .env.example .env && chmod 600 .env
 # edit .env — DATABASE_DSN, AUTH_*, MEDQLAB_WEBHOOK_API_KEY, MEDQLAB_BRIDGING_NIP
+# optional poller: MEDQLAB_ORDER_POLL, MEDQLAB_BASE_URL, MEDQLAB_X_CONS, MEDQLAB_X_SIGN, MEDQLAB_ORDER_SINCE
 
 docker compose up -d --build
 docker compose logs -f app

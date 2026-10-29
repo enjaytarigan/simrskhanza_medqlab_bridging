@@ -2,10 +2,10 @@
 
 Go web app to map **LIS tests** (`lis_tests`) to **SIMRS Khanza** lab templates (`id_template`). Two modes:
 
-| `MAPPER_MODE` | Database | Hasil push |
-|---------------|----------|------------|
-| `simrs` (default) | Same MySQL as SIMRS Khanza | `POST /api/v1/medqlab/hasil` writes `periksa_lab` |
-| `standalone` | Bundled MariaDB owned by this app | Hasil push returns 503 |
+| `MAPPER_MODE` | Database | Hasil push | Order poller |
+|---------------|----------|------------|--------------|
+| `simrs` (default) | Same MySQL as SIMRS Khanza | `POST /api/v1/medqlab/hasil` writes `periksa_lab` | Optional: read `permintaan_lab`, POST MedQLab `saveOrder` |
+| `standalone` | Bundled MariaDB owned by this app | Hasil push returns 503 | Disabled |
 
 Use **standalone** when HIS IT will not host this app or open the Khanza database (for example puruk-cahu). Bridging then calls `POST /api/v1/mappings/resolve` to fill `testid_simrs`.
 
@@ -21,7 +21,7 @@ cp .env.example .env
 
 Open `http://localhost:8080` and sign in with HTTP Basic auth.
 
-**Migrations** (`lis_tests`, `lis_mapping_tests`, `lis_hasil_inbox`, `simrs_panels`, `simrs_templates`) run automatically every time the app starts.
+**Migrations** (`lis_tests`, `lis_mapping_tests`, `lis_hasil_inbox`, `lis_order_outbox`, `simrs_panels`, `simrs_templates`) run automatically every time the app starts.
 
 ## Standalone (no Khanza DB)
 
@@ -74,6 +74,13 @@ Local Go against `.env`:
 | `AUTH_PASSWORD` | Yes | HTTP Basic password |
 | `MEDQLAB_WEBHOOK_API_KEY` | For hasil push and resolve | API key for `POST /api/v1/medqlab/hasil` and `POST /api/v1/mappings/resolve` |
 | `MEDQLAB_BRIDGING_NIP` | Fallback | Used for `periksa_lab.nip` only when payload has no `idEmployeeVerify` on verified leaves |
+| `MEDQLAB_ORDER_POLL` | No | `true` to poll `permintaan_lab` and POST `saveOrder` (`simrs` only; default `false`) |
+| `MEDQLAB_BASE_URL` | When poll is on | MedQLab origin, no trailing slash (app appends `/api/v1/saveOrder`) |
+| `MEDQLAB_X_CONS` | When poll is on | `X-cons` header (same cons id Khanza `ApiMEDQLAB` sends) |
+| `MEDQLAB_X_SIGN` | When poll is on | `X-sign` header (raw secret, not HMAC — matches Khanza Java) |
+| `MEDQLAB_ORDER_SINCE` | When poll is on | Only orders with `tgl_permintaan` on or after this `yyyy-MM-dd` |
+| `MEDQLAB_ORDER_INTERVAL` | No | Poll interval (default `5s`) |
+| `MEDQLAB_ORDER_CLAIM_TIMEOUT` | No | Reclaim a stuck `00` claim after this duration (default `2m`) |
 | `APP_LISTEN` | No | Default `:8080` (use `:8080` in Docker) |
 | `APP_PORT` | No | Host port published by Compose (default `8080`) |
 | `APP_ENV` | No | `development` or `production` (default `production`) |
@@ -144,6 +151,15 @@ On success the service resolves the SIMRS order, maps examinations via `lis_mapp
 
 Requires `MEDQLAB_WEBHOOK_API_KEY` in `.env`. NIP is required from payload verify employee id or `MEDQLAB_BRIDGING_NIP` fallback. In `standalone` mode this endpoint returns **503** (no write access to SIMRS exam tables).
 
+### Order poller (simrs)
+
+When `MEDQLAB_ORDER_POLL=true`, a background loop claims one new `permintaan_lab` at a time (oldest `tgl_permintaan` on or after `MEDQLAB_ORDER_SINCE`), POSTs `{MEDQLAB_BASE_URL}/api/v1/saveOrder` with the same JSON as Khanza `ApiMEDQLAB.kirimRalan` / `kirimRanap`, and stores the MedQLab lab number in `lis_order_outbox`.
+
+- `no_order` is `noorder.substring(4, 14)` (example `PK202602250001` → `2602250001`); `no_pendaftaran` is `no_rawat`.
+- A claim uses `no_laboratorium=00`. Stale claims older than `MEDQLAB_ORDER_CLAIM_TIMEOUT` are retried. Failed rows are not retried automatically.
+- Cancel / change-after-send is not handled.
+- Standalone mode cannot enable the poller.
+
 ## Tables
 
 Created on app startup (if missing):
@@ -151,9 +167,12 @@ Created on app startup (if missing):
 - `lis_tests` — LIS `testId` in `lis_test_id` (unique)
 - `lis_mapping_tests` — links `lis_tests.id` → `id_template`, with `kd_jenis_prw`
 - `lis_hasil_inbox` — push audit (payload + post status)
+- `lis_order_outbox` — claimed / sent / failed order poller rows (`noorder` PK)
 - `simrs_panels` / `simrs_templates` — local Khanza catalog (used in standalone; extra unused tables in `simrs` mode)
 
 SIMRS tables used for hasil write (must already exist): `permintaan_lab`, `periksa_lab`, `detail_periksa_lab`, `saran_kesan_lab`, `reg_periksa`, `template_laboratorium`, `jns_perawatan_lab`, `set_akun_ralan`, `set_akun_ranap`, `jurnal`, `detailjurnal`.
+
+The order poller additionally reads `permintaan_pemeriksaan_lab`, `permintaan_detail_permintaan_lab`, `pasien`, `dokter`, `penjab`, `poliklinik`, `kamar_inap`, `kamar`, and `bangsal`.
 
 ## Integration (SIMRS Java)
 

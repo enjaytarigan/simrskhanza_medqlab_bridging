@@ -13,6 +13,7 @@ import (
 	"lis-khanza-mapper/internal/config"
 	"lis-khanza-mapper/internal/db"
 	"lis-khanza-mapper/internal/handler"
+	"lis-khanza-mapper/internal/medqlab/orderpoll"
 )
 
 func main() {
@@ -48,12 +49,18 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	runCtx, stopRun := context.WithCancel(context.Background())
+	defer stopRun()
+	if poller := orderpoll.New(cfg, sqlDB); poller != nil {
+		go poller.Run(runCtx)
+	}
+
 	go func() {
 		tzLabel := cfg.Timezone
 		if tzLabel == "" {
 			tzLabel = "Local"
 		}
-		log.Printf("listening on %s (env=%s mode=%s timezone=%s)", cfg.Listen, cfg.Env, cfg.MapperMode, tzLabel)
+		log.Printf("listening on %s (env=%s mode=%s timezone=%s order_poll=%v)", cfg.Listen, cfg.Env, cfg.MapperMode, tzLabel, cfg.OrderPoll)
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("listen: %v", err)
 		}
@@ -62,6 +69,7 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
+	stopRun()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
