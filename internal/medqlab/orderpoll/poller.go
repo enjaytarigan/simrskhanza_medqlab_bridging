@@ -22,6 +22,7 @@ type Poller struct {
 	since    time.Time
 	interval time.Duration
 	claimTTL time.Duration
+	onlyRM   []string
 }
 
 func New(cfg config.Config, db *sql.DB) *Poller {
@@ -34,6 +35,7 @@ func New(cfg config.Config, db *sql.DB) *Poller {
 		since:    cfg.OrderPollSince,
 		interval: cfg.OrderPollInterval,
 		claimTTL: cfg.OrderClaimTimeout,
+		onlyRM:   append([]string(nil), cfg.OrderOnlyRM...),
 	}
 }
 
@@ -41,8 +43,12 @@ func (p *Poller) Run(ctx context.Context) {
 	if p == nil {
 		return
 	}
-	log.Printf("[orderpoll] started interval=%s since=%s claim_timeout=%s",
-		p.interval, p.since.Format("2006-01-02"), p.claimTTL)
+	rmLabel := "all patients"
+	if len(p.onlyRM) > 0 {
+		rmLabel = "order_only_rm=" + strings.Join(p.onlyRM, ",")
+	}
+	log.Printf("[orderpoll] started interval=%s since=%s claim_timeout=%s %s",
+		p.interval, p.since.Format("2006-01-02"), p.claimTTL, rmLabel)
 	p.tick(ctx)
 	ticker := time.NewTicker(p.interval)
 	defer ticker.Stop()
@@ -82,19 +88,9 @@ func (p *Poller) claimNext(ctx context.Context) (string, error) {
 	defer func() { _ = tx.Rollback() }()
 
 	staleBefore := time.Now().Add(-p.claimTTL)
+	query, args := claimSQL(p.onlyRM, p.since.Format("2006-01-02"), staleBefore)
 	var noorder string
-	err = tx.QueryRowContext(ctx, `
-SELECT pl.noorder
-FROM permintaan_lab pl
-LEFT JOIN lis_order_outbox o ON o.noorder = pl.noorder
-WHERE pl.tgl_permintaan >= ?
-  AND (
-    o.noorder IS NULL
-    OR (o.status = 'claimed' AND o.no_laboratorium = ? AND o.claimed_at <= ?)
-  )
-ORDER BY pl.tgl_permintaan ASC, pl.jam_permintaan ASC
-LIMIT 1
-FOR UPDATE`, p.since.Format("2006-01-02"), claimLabNo, staleBefore).Scan(&noorder)
+	err = tx.QueryRowContext(ctx, query, args...).Scan(&noorder)
 	if errors.Is(err, sql.ErrNoRows) {
 		if err := tx.Commit(); err != nil {
 			return "", err
@@ -122,6 +118,36 @@ ON DUPLICATE KEY UPDATE
 		return "", err
 	}
 	return noorder, nil
+}
+
+func claimSQL(onlyRM []string, since string, staleBefore time.Time) (string, []any) {
+	join := ""
+	rmFilter := ""
+	args := []any{since, claimLabNo, staleBefore}
+	if len(onlyRM) > 0 {
+		join = "INNER JOIN reg_periksa rp ON pl.no_rawat = rp.no_rawat"
+		placeholders := make([]string, len(onlyRM))
+		for i, rm := range onlyRM {
+			placeholders[i] = "?"
+			args = append(args, rm)
+		}
+		rmFilter = "AND rp.no_rkm_medis IN (" + strings.Join(placeholders, ", ") + ")"
+	}
+	query := fmt.Sprintf(`
+SELECT pl.noorder
+FROM permintaan_lab pl
+%s
+LEFT JOIN lis_order_outbox o ON o.noorder = pl.noorder
+WHERE pl.tgl_permintaan >= ?
+  AND (
+    o.noorder IS NULL
+    OR (o.status = 'claimed' AND o.no_laboratorium = ? AND o.claimed_at <= ?)
+  )
+  %s
+ORDER BY pl.tgl_permintaan ASC, pl.jam_permintaan ASC
+LIMIT 1
+FOR UPDATE`, join, rmFilter)
+	return query, args
 }
 
 func (p *Poller) process(ctx context.Context, noorder string) error {

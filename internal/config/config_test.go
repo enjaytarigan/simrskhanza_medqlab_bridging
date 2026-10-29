@@ -66,6 +66,53 @@ func TestLoadOrderPollRequiresFields(t *testing.T) {
 	}
 }
 
+func TestParseCSVList(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []string
+	}{
+		{"", nil},
+		{"   ", nil},
+		{"000022", []string{"000022"}},
+		{"000022,000023", []string{"000022", "000023"}},
+		{" 000022 , 000023 , ", []string{"000022", "000023"}},
+		{",,", nil},
+	}
+	for _, c := range cases {
+		got := parseCSVList(c.in)
+		if len(got) != len(c.want) {
+			t.Errorf("parseCSVList(%q)=%v want %v", c.in, got, c.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Errorf("parseCSVList(%q)=%v want %v", c.in, got, c.want)
+				break
+			}
+		}
+	}
+}
+
+func TestLoadOrderOnlyRM(t *testing.T) {
+	t.Setenv("DATABASE_DSN", "user:pass@tcp(127.0.0.1:3306)/sik")
+	t.Setenv("AUTH_USERNAME", "admin")
+	t.Setenv("AUTH_PASSWORD", "secret")
+	t.Setenv("MAPPER_MODE", "simrs")
+	t.Setenv("MEDQLAB_ORDER_POLL", "true")
+	t.Setenv("MEDQLAB_BASE_URL", "https://lis.example")
+	t.Setenv("MEDQLAB_X_CONS", "cons")
+	t.Setenv("MEDQLAB_X_SIGN", "sign")
+	t.Setenv("MEDQLAB_ORDER_SINCE", "2026-10-01")
+	t.Setenv("MEDQLAB_ORDER_ONLY_RM", "000022, 000023")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.OrderOnlyRM) != 2 || cfg.OrderOnlyRM[0] != "000022" || cfg.OrderOnlyRM[1] != "000023" {
+		t.Fatalf("OrderOnlyRM=%v", cfg.OrderOnlyRM)
+	}
+}
+
 func TestLoadOrderPollRejectedInStandalone(t *testing.T) {
 	t.Setenv("DATABASE_DSN", "user:pass@tcp(127.0.0.1:3306)/mapper")
 	t.Setenv("AUTH_USERNAME", "admin")
