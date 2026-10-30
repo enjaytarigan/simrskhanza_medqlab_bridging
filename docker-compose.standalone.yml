@@ -23,7 +23,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: lis-khanza-mapper
+    container_name: lis-khanza-mapper-standalone
     restart: unless-stopped
     depends_on:
       mysql:

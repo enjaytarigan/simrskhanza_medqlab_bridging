@@ -1,6 +1,6 @@
-# Panduan Deployment Produksi LIS Khanza Mapper (Docker Compose)
+# Panduan Deployment Produksi LIS Khanza Mapper — mode SIMRS
 
-Dokumen ini menjelaskan cara men-deploy aplikasi **LIS Khanza Mapper** ke **lingkungan produksi** menggunakan Docker Compose: clone repositori, definisi Compose, serta konfigurasi variabel lingkungan dan rahasia (secret).
+Dokumen ini adalah panduan deployment **mode `simrs`**: aplikasi terhubung ke MySQL/MariaDB Khanza, memetakan tes LIS, dan (opsional) menjembatani order serta hasil dengan MedQLab. Mode `standalone` (tanpa DB Khanza) memakai `.env.standalone.example` dan tidak dibahas di sini.
 
 Repositori: [https://github.com/enjaytarigan/lis-khanza-mapper](https://github.com/enjaytarigan/lis-khanza-mapper)
 
@@ -25,6 +25,51 @@ Aplikasi menggunakan **database MySQL/MariaDB produksi SIMRS** yang sudah berjal
 | Autentikasi UI/API mapping | HTTP Basic Auth (`AUTH_USERNAME` / `AUTH_PASSWORD`) |
 | Autentikasi push hasil | API key (`MEDQLAB_WEBHOOK_API_KEY`) |
 | UI audit | `/bridging-logs` — log hasil yang di-push |
+| Poller order | Opt-in (`MEDQLAB_ORDER_POLL`); uji dengan `MEDQLAB_ORDER_ONLY_RM` |
+
+### 1.1 Alur data
+
+Dua arah independen. Boleh dinyalakan sendiri-sendiri.
+
+```text
+Khanza permintaan_lab
+        |
+        v  poller (MEDQLAB_ORDER_POLL=true)
+lis_order_outbox  ----POST /api/v1/saveOrder---->  MedQLab
+                                                    |
+                                                    v  push hasil
+                         POST /api/v1/medqlab/hasil
+                                                    |
+                                                    v
+                              periksa_lab / detail_periksa_lab / saran_kesan_lab
+```
+
+- **Order:** mapper membaca `permintaan_lab`, menyusun JSON seperti `ApiMEDQLAB.kirimRalan` / `kirimRanap`, POST ke MedQLab, menyimpan `no_laboratorium` di `lis_order_outbox`.
+- **Hasil:** MedQLab memanggil mapper; mapper menulis tabel pemeriksaan Khanza. Tidak memakai filter RM.
+
+Jangan jalankan poller mapper bersamaan dengan kirim order dari UI Khanza (`kirimRalan` / `kirimRanap`) untuk order yang sama — MedQLab bisa menerima duplikat.
+
+### 1.2 Tiga profil operasi
+
+Set `MAPPER_MODE=simrs` pada ketiganya. UI mapping selalu aktif.
+
+| Profil | Order ke MedQLab | Hasil ke Khanza | Env kunci |
+|--------|------------------|-----------------|-----------|
+| Hasil saja | Mati | Hidup | `MEDQLAB_ORDER_POLL=false` (default) + isi `MEDQLAB_WEBHOOK_API_KEY` |
+| Order saja | Hidup | Mati | `MEDQLAB_ORDER_POLL=true` + URL/cons/sign/since; **kosongkan** `MEDQLAB_WEBHOOK_API_KEY` |
+| Keduanya | Hidup | Hidup | Poller on + isi API key |
+
+Hasil tidak punya flag `true`/`false` tersendiri. Endpoint `POST /api/v1/medqlab/hasil` menolak request jika API key kosong (HTTP 503).
+
+### 1.3 Jaringan
+
+| Arah | Syarat |
+|------|--------|
+| Mapper → MySQL Khanza | `DATABASE_DSN` reachable (biasanya port 3306) |
+| Mapper → MedQLab (order) | Host `MEDQLAB_BASE_URL` reachable dari container; path yang dipakai `/api/v1/saveOrder` |
+| MedQLab → mapper (hasil) | MedQLab reachable ke `http://<host-mapper>:<APP_PORT>/api/v1/medqlab/hasil` dengan `X-API-Key` |
+
+Firewall: buka `APP_PORT` hanya di jaringan internal/RS. Reverse proxy TLS disarankan jika MedQLab di luar host mapper.
 
 ---
 
@@ -35,6 +80,8 @@ Server produksi (VM/bare metal) harus memiliki:
 - **Docker Engine** 24+ (atau setara)
 - **Docker Compose** v2 (`docker compose`)
 - Akses jaringan ke **MySQL/MariaDB SIMRS produksi** (port biasanya `3306`)
+- Jika poller order on: akses HTTPS/HTTP dari server mapper ke origin MedQLab (`MEDQLAB_BASE_URL`)
+- Jika hasil on: MedQLab harus bisa memanggil `APP_PORT` mapper
 - **Git** (clone/pull kode di server produksi)
 - Ruang disk dan CPU memadai untuk **build image** di server (kompilasi Go di dalam Docker build)
 - Port `APP_PORT` (default `8080`) terbuka sesuai kebijakan akses internal/rs
@@ -118,9 +165,22 @@ APP_PORT=8080
 # Zona waktu rumah sakit (IANA). Contoh: Asia/Jakarta | Asia/Makassar | Asia/Jayapura | Asia/Pontianak
 APP_TIMEZONE=Asia/Jakarta
 
-# MedQLab push result API (POST /api/v1/medqlab/hasil)
+MAPPER_MODE=simrs
+
+# Hasil: kosongkan MEDQLAB_WEBHOOK_API_KEY untuk menonaktifkan push hasil
 MEDQLAB_WEBHOOK_API_KEY=ganti-dengan-openssl-rand-hex-32
 MEDQLAB_BRIDGING_NIP=198001012000011001
+
+# Order: false = hasil saja. true membutuhkan URL/cons/sign/since.
+MEDQLAB_ORDER_POLL=false
+MEDQLAB_BASE_URL=https://lis.example
+MEDQLAB_X_CONS=consid-khanza
+MEDQLAB_X_SIGN=secret-mentah-bukan-hmac
+MEDQLAB_ORDER_SINCE=2026-10-01
+MEDQLAB_ORDER_INTERVAL=5s
+MEDQLAB_ORDER_CLAIM_TIMEOUT=2m
+# Uji: hanya nomor RM ini yang dikirim. Kosongkan saat go-live semua pasien.
+MEDQLAB_ORDER_ONLY_RM=
 ```
 
 Generate API key:
@@ -149,18 +209,20 @@ DATABASE_DSN=spv:server@tcp(192.168.1.10:3306)/sik?parseTime=true&loc=Local&char
 
 | Variabel | Wajib | Default | Deskripsi |
 |----------|-------|---------|-----------|
+| `MAPPER_MODE` | Tidak | `simrs` | Harus `simrs` untuk dokumen ini |
 | `DATABASE_DSN` | Ya | — | DSN ke database SIMRS produksi |
 | `AUTH_USERNAME` | Ya | — | Username HTTP Basic Auth (UI + API mapping) |
 | `AUTH_PASSWORD` | Ya | — | Password HTTP Basic Auth |
-| `MEDQLAB_WEBHOOK_API_KEY` | Untuk push hasil | — | API key `POST /api/v1/medqlab/hasil`. Jika kosong → HTTP 503 |
-| `MEDQLAB_BRIDGING_NIP` | Fallback | — | NIP untuk `periksa_lab.nip` jika payload tidak punya `idEmployeeVerify` |
-| `MEDQLAB_ORDER_POLL` | Tidak | `false` | `true` untuk mengirim order Khanza ke MedQLab (`simrs` saja) |
+| `MEDQLAB_WEBHOOK_API_KEY` | Untuk push hasil | — | API key `POST /api/v1/medqlab/hasil`. Jika kosong → HTTP 503 (hasil mati) |
+| `MEDQLAB_BRIDGING_NIP` | Fallback hasil | — | NIP untuk `periksa_lab.nip` jika payload tidak punya `idEmployeeVerify` |
+| `MEDQLAB_ORDER_POLL` | Tidak | `false` | `true` untuk mengirim order Khanza ke MedQLab |
 | `MEDQLAB_BASE_URL` | Jika poll on | — | Origin MedQLab (tanpa trailing slash) |
 | `MEDQLAB_X_CONS` | Jika poll on | — | Header `X-cons` (cons id Khanza) |
 | `MEDQLAB_X_SIGN` | Jika poll on | — | Header `X-sign` (secret mentah, bukan HMAC) |
 | `MEDQLAB_ORDER_SINCE` | Jika poll on | — | `yyyy-MM-dd`; hanya order dengan `tgl_permintaan` pada/sesudah tanggal ini |
 | `MEDQLAB_ORDER_INTERVAL` | Tidak | `5s` | Jeda antar tick poller |
 | `MEDQLAB_ORDER_CLAIM_TIMEOUT` | Tidak | `2m` | Klaim `00` yang macet boleh diambil ulang setelah durasi ini |
+| `MEDQLAB_ORDER_ONLY_RM` | Tidak | kosong | Daftar `no_rkm_medis` dipisah koma. Kosong = semua pasien. Terisi = hanya RM itu (mode uji) |
 | `APP_LISTEN` | Tidak | `:8080` | Bind di dalam container (gunakan `:8080`) |
 | `APP_PORT` | Tidak | `8080` | Port yang dipublish ke host |
 | `APP_ENV` | Tidak | `production` | Tetap `production` di server produksi |
@@ -207,17 +269,33 @@ docker compose up -d --build
 
 ### 6.1 Persiapan database SIMRS produksi
 
-1. Buat atau gunakan user MySQL dengan hak minimal:
+1. Buat atau gunakan user MySQL dengan hak sesuai profil. Semua profil butuh hak inti mapping.
+
+**Inti (selalu):**
 
 | Hak | Objek |
 |-----|--------|
-| **SELECT** | `template_laboratorium`, `jns_perawatan_lab`, `permintaan_lab`, `permintaan_pemeriksaan_lab`, `permintaan_detail_permintaan_lab`, `reg_periksa`, `pasien`, `dokter`, `penjab`, `poliklinik`, `kamar_inap`, `kamar`, `bangsal`, `set_akun_ralan`, `set_akun_ranap` |
-| **CREATE / ALTER / INSERT / UPDATE / SELECT** | `lis_tests`, `lis_mapping_tests`, `lis_hasil_inbox`, `lis_order_outbox` |
+| **SELECT** | `template_laboratorium`, `jns_perawatan_lab` |
+| **CREATE / ALTER / INSERT / UPDATE / SELECT** | `lis_tests`, `lis_mapping_tests` |
+
+**Tambahan hasil:**
+
+| Hak | Objek |
+|-----|--------|
+| **SELECT** | `permintaan_lab`, `reg_periksa`, `set_akun_ralan`, `set_akun_ranap` |
+| **CREATE / ALTER / INSERT / UPDATE / SELECT** | `lis_hasil_inbox` |
 | **INSERT / UPDATE / SELECT** | `periksa_lab`, `detail_periksa_lab`, `saran_kesan_lab` |
 | **INSERT / SELECT** | `jurnal`, `detailjurnal` |
-| **UPDATE** | `permintaan_lab` (kolom `tgl_hasil` / `jam_hasil`; plus `tgl_sampel` / `jam_sampel` jika ada `collectDate`) |
+| **UPDATE** | `permintaan_lab` (`tgl_hasil` / `jam_hasil`; plus `tgl_sampel` / `jam_sampel` jika ada `collectDate`) |
 
-2. Mapping LIS ↔ template dikelola lewat UI; hasil lab ditulis otomatis saat MedQLab push ke API. Poller order (jika diaktifkan) membaca `permintaan_lab` dan menulis `lis_order_outbox`.
+**Tambahan poller order:**
+
+| Hak | Objek |
+|-----|--------|
+| **SELECT** | `permintaan_lab`, `permintaan_pemeriksaan_lab`, `permintaan_detail_permintaan_lab`, `reg_periksa`, `pasien`, `dokter`, `penjab`, `poliklinik`, `kamar_inap`, `kamar`, `bangsal` |
+| **CREATE / ALTER / INSERT / UPDATE / SELECT** | `lis_order_outbox` |
+
+2. Mapping LIS ↔ template dikelola lewat UI sebelum uji order/hasil. Poller hanya mengirim tes yang ada di permintaan Khanza; hasil yang tidak termapping tercatat di `/bridging-logs`.
 
 ### 6.2 Build di server dan jalankan
 
@@ -252,8 +330,10 @@ Output yang diharapkan:
 
 ```text
 migrations applied
-listening on :8080 (env=production)
+listening on :8080 (env=production mode=simrs timezone=Asia/Jakarta order_poll=false)
 ```
+
+Jika poller on, log juga memuat `[orderpoll] started ...` dan `order_only_rm=...` atau `all patients`.
 
 ### 6.3 Verifikasi
 
@@ -288,6 +368,39 @@ Migrasi dijalankan ulang saat container baru start (perintah `CREATE TABLE IF NO
 docker compose down
 ```
 
+### 6.6 Uji poller order dengan nomor RM (lalu go-live)
+
+Gunakan ini sebelum membuka poller ke semua pasien.
+
+1. Pastikan mapping LIS → template sudah ada di UI (`/map/bulk`).
+2. Pilih satu atau dua `no_rkm_medis` uji yang punya `permintaan_lab` baru (`tgl_permintaan` ≥ `MEDQLAB_ORDER_SINCE`).
+3. Set:
+
+```env
+MEDQLAB_ORDER_POLL=true
+MEDQLAB_ORDER_ONLY_RM=000022,000023
+```
+
+4. Restart: `docker compose up -d`. Cek log `[orderpoll] started ... order_only_rm=000022,000023`.
+5. Buat order lab di Khanza untuk RM itu (atau tunggu order yang sudah ada). Jangan kirim lewat tombol `ApiMEDQLAB` Khanza.
+6. Verifikasi:
+
+```sql
+SELECT noorder, no_rawat, no_laboratorium, status, error_message, claimed_at, sent_at
+FROM lis_order_outbox
+ORDER BY updated_at DESC
+LIMIT 20;
+```
+
+   - `sent` + nomor lab: MedQLab menerima order.
+   - `failed`: baca `error_message` (order pendek, tanpa item, kamar ranap tidak ketemu, ditolak LIS).
+   - Order RM lain **tidak** muncul di outbox.
+
+7. Jika hasil juga diuji, MedQLab push ke `/api/v1/medqlab/hasil`; cek UI `/bridging-logs`.
+8. Go-live semua pasien: kosongkan `MEDQLAB_ORDER_ONLY_RM` (atau hapus baris itu), restart. Log harus `all patients`.
+
+`MEDQLAB_ORDER_ONLY_RM` tidak memfilter push hasil. Kosongkan nilai itu jika tidak sedang menguji order.
+
 ---
 
 ## 7. Troubleshooting
@@ -304,8 +417,9 @@ docker compose down
 | Push hasil `401` | API key salah | Periksa `MEDQLAB_WEBHOOK_API_KEY` |
 | Push hasil `503` | Key/NIP belum di-set | Isi `MEDQLAB_WEBHOOK_API_KEY` dan `MEDQLAB_BRIDGING_NIP`, restart |
 | Hasil tidak masuk SIMRS | Order/mapping tidak cocok | Cek log app dan UI `/bridging-logs` |
-| Order tidak masuk MedQLab | Poller off / since terlalu baru / outbox `failed` | Set `MEDQLAB_ORDER_POLL=true` dan `MEDQLAB_ORDER_SINCE`; cek log `[orderpoll]` dan `lis_order_outbox` |
+| Order tidak masuk MedQLab | Poller off / since terlalu baru / outbox `failed` / RM tidak di allowlist | Set `MEDQLAB_ORDER_POLL=true` dan `MEDQLAB_ORDER_SINCE`; jika uji, pastikan RM ada di `MEDQLAB_ORDER_ONLY_RM`; cek log `[orderpoll]` dan `lis_order_outbox` |
 | Order terkirim ganda | `ApiMEDQLAB` Khanza dan poller sama-sama aktif | Matikan kirim order dari UI Khanza untuk order yang di-poll mapper |
+| Order pasien uji tidak terkirim | RM tidak cocok / `tgl_permintaan` sebelum since | Samakan `no_rkm_medis` (termasuk nol di depan) dengan `MEDQLAB_ORDER_ONLY_RM` |
 
 ```bash
 docker compose ps
@@ -324,6 +438,7 @@ cd lis-khanza-mapper
 cp .env.example .env && chmod 600 .env
 # edit .env — DATABASE_DSN, AUTH_*, MEDQLAB_WEBHOOK_API_KEY, MEDQLAB_BRIDGING_NIP
 # optional poller: MEDQLAB_ORDER_POLL, MEDQLAB_BASE_URL, MEDQLAB_X_CONS, MEDQLAB_X_SIGN, MEDQLAB_ORDER_SINCE
+# uji: MEDQLAB_ORDER_ONLY_RM=000022  (kosongkan saat go-live)
 
 docker compose up -d --build
 docker compose logs -f app

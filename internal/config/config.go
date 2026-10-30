@@ -38,6 +38,8 @@ type Config struct {
 	OrderPollSince    time.Time
 	OrderPollInterval time.Duration
 	OrderClaimTimeout time.Duration
+	// OrderOnlyRM, when non-empty, limits the order poller to these no_rkm_medis values.
+	OrderOnlyRM []string
 }
 
 func Load() (Config, error) {
@@ -90,6 +92,7 @@ func loadOrderPoll(cfg *Config) error {
 	cfg.MedQLabXSign = os.Getenv("MEDQLAB_X_SIGN")
 	cfg.OrderPollInterval = envDuration("MEDQLAB_ORDER_INTERVAL", 5*time.Second)
 	cfg.OrderClaimTimeout = envDuration("MEDQLAB_ORDER_CLAIM_TIMEOUT", 2*time.Minute)
+	cfg.OrderOnlyRM = parseCSVList(os.Getenv("MEDQLAB_ORDER_ONLY_RM"))
 	if !cfg.OrderPoll {
 		return nil
 	}
@@ -139,6 +142,17 @@ func envBool(key string, def bool) bool {
 	default:
 		return def
 	}
+}
+
+func parseCSVList(raw string) []string {
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func envDuration(key string, def time.Duration) time.Duration {
