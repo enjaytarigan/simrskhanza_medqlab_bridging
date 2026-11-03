@@ -25,7 +25,7 @@ Aplikasi menggunakan **database MySQL/MariaDB produksi SIMRS** yang sudah berjal
 | Autentikasi UI/API mapping | HTTP Basic Auth (`AUTH_USERNAME` / `AUTH_PASSWORD`) |
 | Autentikasi push hasil | API key (`MEDQLAB_WEBHOOK_API_KEY`) |
 | UI audit | `/bridging-logs` — log hasil yang di-push |
-| Poller order | Opt-in (`MEDQLAB_ORDER_POLL`); uji dengan `MEDQLAB_ORDER_ONLY_RM` |
+| Poller order | Opt-in (`MEDQLAB_ORDER_POLL`); uji order+hasil dengan `MEDQLAB_ORDER_ONLY_RM` |
 
 ### 1.1 Alur data
 
@@ -45,7 +45,7 @@ lis_order_outbox  ----POST /api/v1/saveOrder---->  MedQLab
 ```
 
 - **Order:** mapper membaca `permintaan_lab`, menyusun JSON seperti `ApiMEDQLAB.kirimRalan` / `kirimRanap`, POST ke MedQLab, menyimpan `no_laboratorium` di `lis_order_outbox`.
-- **Hasil:** MedQLab memanggil mapper; mapper menulis tabel pemeriksaan Khanza. Tidak memakai filter RM.
+- **Hasil:** MedQLab memanggil mapper; mapper menulis tabel pemeriksaan Khanza. Memakai filter `MEDQLAB_ORDER_ONLY_RM` yang sama (jika terisi).
 
 Jangan jalankan poller mapper bersamaan dengan kirim order dari UI Khanza (`kirimRalan` / `kirimRanap`) untuk order yang sama — MedQLab bisa menerima duplikat.
 
@@ -222,7 +222,7 @@ DATABASE_DSN=spv:server@tcp(192.168.1.10:3306)/sik?parseTime=true&loc=Local&char
 | `MEDQLAB_ORDER_SINCE` | Jika poll on | — | `yyyy-MM-dd`; hanya order dengan `tgl_permintaan` pada/sesudah tanggal ini |
 | `MEDQLAB_ORDER_INTERVAL` | Tidak | `5s` | Jeda antar tick poller |
 | `MEDQLAB_ORDER_CLAIM_TIMEOUT` | Tidak | `2m` | Klaim `00` yang macet boleh diambil ulang setelah durasi ini |
-| `MEDQLAB_ORDER_ONLY_RM` | Tidak | kosong | Daftar `no_rkm_medis` dipisah koma. Kosong = semua pasien. Terisi = hanya RM itu (mode uji) |
+| `MEDQLAB_ORDER_ONLY_RM` | Tidak | kosong | Daftar `no_rkm_medis` dipisah koma. Kosong = semua pasien. Terisi = hanya RM itu untuk **order dan hasil** (mode uji) |
 | `APP_LISTEN` | Tidak | `:8080` | Bind di dalam container (gunakan `:8080`) |
 | `APP_PORT` | Tidak | `8080` | Port yang dipublish ke host |
 | `APP_ENV` | Tidak | `production` | Tetap `production` di server produksi |
@@ -368,12 +368,12 @@ Migrasi dijalankan ulang saat container baru start (perintah `CREATE TABLE IF NO
 docker compose down
 ```
 
-### 6.6 Uji poller order dengan nomor RM (lalu go-live)
+### 6.6 Uji dengan nomor RM (order dan/atau hasil, lalu go-live)
 
-Gunakan ini sebelum membuka poller ke semua pasien.
+Gunakan ini sebelum membuka bridging ke semua pasien. Filter yang sama (`MEDQLAB_ORDER_ONLY_RM`) membatasi **order poller** dan **write hasil**.
 
 1. Pastikan mapping LIS → template sudah ada di UI (`/map/bulk`).
-2. Pilih satu atau dua `no_rkm_medis` uji yang punya `permintaan_lab` baru (`tgl_permintaan` ≥ `MEDQLAB_ORDER_SINCE`).
+2. Pilih satu atau dua `no_rkm_medis` uji yang punya `permintaan_lab` baru (`tgl_permintaan` ≥ `MEDQLAB_ORDER_SINCE` jika uji order).
 3. Set:
 
 ```env
@@ -383,7 +383,7 @@ MEDQLAB_ORDER_ONLY_RM=000022,000023
 
 4. Restart: `docker compose up -d`. Cek log `[orderpoll] started ... order_only_rm=000022,000023`.
 5. Buat order lab di Khanza untuk RM itu (atau tunggu order yang sudah ada). Jangan kirim lewat tombol `ApiMEDQLAB` Khanza.
-6. Verifikasi:
+6. Verifikasi order:
 
 ```sql
 SELECT noorder, no_rawat, no_laboratorium, status, error_message, claimed_at, sent_at
@@ -396,10 +396,10 @@ LIMIT 20;
    - `failed`: baca `error_message` (order pendek, tanpa item, kamar ranap tidak ketemu, ditolak LIS).
    - Order RM lain **tidak** muncul di outbox.
 
-7. Jika hasil juga diuji, MedQLab push ke `/api/v1/medqlab/hasil`; cek UI `/bridging-logs`.
-8. Go-live semua pasien: kosongkan `MEDQLAB_ORDER_ONLY_RM` (atau hapus baris itu), restart. Log harus `all patients`.
-
-`MEDQLAB_ORDER_ONLY_RM` tidak memfilter push hasil. Kosongkan nilai itu jika tidak sedang menguji order.
+7. Uji hasil: MedQLab push ke `/api/v1/medqlab/hasil`.
+   - RM di allowlist → hasil masuk; cek UI `/bridging-logs` dan tabel `periksa_lab`.
+   - RM lain → HTTP **403** (tidak ditulis ke SIMRS; tidak masuk inbox).
+8. Go-live semua pasien: kosongkan `MEDQLAB_ORDER_ONLY_RM` (atau hapus baris itu), restart. Log poller harus `all patients`.
 
 ---
 
@@ -415,6 +415,7 @@ LIMIT 20;
 | Login ditolak | Kredensial aplikasi salah | Periksa `AUTH_USERNAME` / `AUTH_PASSWORD` |
 | Template kosong | DSN bukan DB SIMRS | Pastikan database `sik` (atau nama DB SIMRS Anda) benar |
 | Push hasil `401` | API key salah | Periksa `MEDQLAB_WEBHOOK_API_KEY` |
+| Push hasil `403` | RM tidak di allowlist uji | Pastikan `no_rkm_medis` ada di `MEDQLAB_ORDER_ONLY_RM`, atau kosongkan filter saat go-live |
 | Push hasil `503` | Key/NIP belum di-set | Isi `MEDQLAB_WEBHOOK_API_KEY` dan `MEDQLAB_BRIDGING_NIP`, restart |
 | Hasil tidak masuk SIMRS | Order/mapping tidak cocok | Cek log app dan UI `/bridging-logs` |
 | Order tidak masuk MedQLab | Poller off / since terlalu baru / outbox `failed` / RM tidak di allowlist | Set `MEDQLAB_ORDER_POLL=true` dan `MEDQLAB_ORDER_SINCE`; jika uji, pastikan RM ada di `MEDQLAB_ORDER_ONLY_RM`; cek log `[orderpoll]` dan `lis_order_outbox` |

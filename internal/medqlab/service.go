@@ -19,19 +19,26 @@ var (
 	ErrNoValidatedAt      = errors.New("no validatedAt on examination results")
 	ErrNIPRequired        = errors.New("MEDQLAB_BRIDGING_NIP is required")
 	ErrNoRawatRequired    = errors.New("visitNumber / no_rawat is required")
+	ErrRMNotAllowed       = errors.New("medical record not in MEDQLAB_ORDER_ONLY_RM allowlist")
 )
 
 type Service struct {
-	db  *sql.DB
-	nip string
-	loc *time.Location
+	db     *sql.DB
+	nip    string
+	loc    *time.Location
+	onlyRM []string
 }
 
-func NewService(db *sql.DB, bridgingNIP string, loc *time.Location) *Service {
+func NewService(db *sql.DB, bridgingNIP string, loc *time.Location, onlyRM []string) *Service {
 	if loc == nil {
 		loc = time.Local
 	}
-	return &Service{db: db, nip: strings.TrimSpace(bridgingNIP), loc: loc}
+	return &Service{
+		db:     db,
+		nip:    strings.TrimSpace(bridgingNIP),
+		loc:    loc,
+		onlyRM: append([]string(nil), onlyRM...),
+	}
 }
 
 type ProcessResult struct {
@@ -124,6 +131,11 @@ func (s *Service) ProcessEnvelope(ctx context.Context, env *Envelope, rawJSON []
 
 	log.Printf("[medqlab] step=identify medqlab_order=%q no_laboratorium=%q no_rawat=%q fallback_nip=%q payload_bytes=%d",
 		medqlabOrder, noLab, noRawat, s.nip, len(rawJSON))
+
+	if err := s.assertRMAllowed(ctx, noRawat); err != nil {
+		log.Printf("[medqlab] FAIL: rm allowlist: %v", err)
+		return nil, err
+	}
 
 	inboxID, err := s.insertInbox(ctx, medqlabOrder, noLab, rawJSON)
 	if err != nil {
@@ -724,6 +736,48 @@ func (s *Service) registrasiDitutup(ctx context.Context, noRawat string) (bool, 
 SELECT COUNT(*) FROM reg_periksa
 WHERE no_rawat=? AND (stts='Batal' OR status_bayar='Sudah Bayar')`, noRawat).Scan(&n)
 	return n > 0, err
+}
+
+// assertRMAllowed refuses hasil writes when MEDQLAB_ORDER_ONLY_RM is set and the
+// visit's no_rkm_medis is not in that list. Empty allowlist means all patients.
+func (s *Service) assertRMAllowed(ctx context.Context, noRawat string) error {
+	if len(s.onlyRM) == 0 {
+		return nil
+	}
+	rm, err := s.lookupNoRkmMedis(ctx, noRawat)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: reg_periksa not found for no_rawat=%q", ErrRMNotAllowed, noRawat)
+		}
+		return err
+	}
+	if !rmInAllowlist(rm, s.onlyRM) {
+		return fmt.Errorf("%w: no_rkm_medis=%q no_rawat=%q", ErrRMNotAllowed, rm, noRawat)
+	}
+	log.Printf("[medqlab] step=rm_allowlist OK no_rkm_medis=%q no_rawat=%q", rm, noRawat)
+	return nil
+}
+
+func (s *Service) lookupNoRkmMedis(ctx context.Context, noRawat string) (string, error) {
+	var rm string
+	err := s.db.QueryRowContext(ctx, `
+SELECT no_rkm_medis FROM reg_periksa WHERE no_rawat=? LIMIT 1`, noRawat).Scan(&rm)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(rm), nil
+}
+
+func rmInAllowlist(rm string, allow []string) bool {
+	if len(allow) == 0 {
+		return true
+	}
+	for _, a := range allow {
+		if rm == a {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) loadOrderPanels(ctx context.Context, noOrder string) ([]string, error) {

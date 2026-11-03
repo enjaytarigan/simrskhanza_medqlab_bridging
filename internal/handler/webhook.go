@@ -112,6 +112,8 @@ func mapMedQLabError(err error) (int, string) {
 		return http.StatusBadRequest, err.Error()
 	case errors.Is(err, medqlab.ErrRegistrationClosed):
 		return http.StatusConflict, err.Error()
+	case errors.Is(err, medqlab.ErrRMNotAllowed):
+		return http.StatusForbidden, err.Error()
 	case errors.Is(err, medqlab.ErrNoMappedResults):
 		return http.StatusUnprocessableEntity, err.Error()
 	case errors.Is(err, medqlab.ErrNoValidatedAt):

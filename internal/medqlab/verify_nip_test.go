@@ -11,7 +11,7 @@ func TestResolveVerifyNIPLatestWins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := NewService(nil, "ENV_NIP", loc)
+	s := NewService(nil, "ENV_NIP", loc, nil)
 
 	nip, source := s.resolveVerifyNIP([]mappedRow{
 		{Leaf: LeafResult{
@@ -34,7 +34,7 @@ func TestResolveVerifyNIPLatestWins(t *testing.T) {
 
 func TestResolveVerifyNIPFallsBackToEnv(t *testing.T) {
 	loc := time.UTC
-	s := NewService(nil, "ENV_NIP", loc)
+	s := NewService(nil, "ENV_NIP", loc, nil)
 
 	nip, source := s.resolveVerifyNIP([]mappedRow{
 		{Leaf: LeafResult{VerifiedAt: "2026-10-06T08:16:08.412Z"}},
@@ -44,7 +44,7 @@ func TestResolveVerifyNIPFallsBackToEnv(t *testing.T) {
 		t.Fatalf("want ENV_NIP from env, got nip=%q source=%q", nip, source)
 	}
 
-	sEmpty := NewService(nil, "", loc)
+	sEmpty := NewService(nil, "", loc, nil)
 	nip2, source2 := sEmpty.resolveVerifyNIP(nil)
 	if nip2 != "" || source2 != "" {
 		t.Fatalf("want empty when no verify and no env, got nip=%q source=%q", nip2, source2)

@@ -81,7 +81,7 @@ Local Go against `.env`:
 | `MEDQLAB_ORDER_SINCE` | When poll is on | Only orders with `tgl_permintaan` on or after this `yyyy-MM-dd` |
 | `MEDQLAB_ORDER_INTERVAL` | No | Poll interval (default `5s`) |
 | `MEDQLAB_ORDER_CLAIM_TIMEOUT` | No | Reclaim a stuck `00` claim after this duration (default `2m`) |
-| `MEDQLAB_ORDER_ONLY_RM` | No | Comma-separated `no_rkm_medis`. Empty = all patients. Set during order-poller testing |
+| `MEDQLAB_ORDER_ONLY_RM` | No | Comma-separated `no_rkm_medis` for order poller and hasil push. Empty = all patients. Set during testing |
 | `APP_LISTEN` | No | Default `:8080` (use `:8080` in Docker) |
 | `APP_PORT` | No | Host port published by Compose (default `8080`) |
 | `APP_ENV` | No | `development` or `production` (default `production`) |
@@ -160,7 +160,7 @@ When `MEDQLAB_ORDER_POLL=true`, a background loop claims one new `permintaan_lab
 - A claim uses `no_laboratorium=00`. Stale claims older than `MEDQLAB_ORDER_CLAIM_TIMEOUT` are retried. Failed rows are not retried automatically.
 - Cancel / change-after-send is not handled.
 - Standalone mode cannot enable the poller.
-- `MEDQLAB_ORDER_ONLY_RM` limits claims to those medical-record numbers (testing). Empty means all patients. Hasil push ignores this filter.
+- `MEDQLAB_ORDER_ONLY_RM` limits order claims and hasil writes to those medical-record numbers (testing). Empty means all patients. Hasil for other RMs returns HTTP 403.
 
 ## Tables
 
