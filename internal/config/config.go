@@ -38,7 +38,7 @@ type Config struct {
 	OrderPollSince    time.Time
 	OrderPollInterval time.Duration
 	OrderClaimTimeout time.Duration
-	// OrderOnlyRM, when non-empty, limits the order poller to these no_rkm_medis values.
+	// OrderOnlyRM, when non-empty, limits the order poller and hasil push to these no_rkm_medis values.
 	OrderOnlyRM []string
 }
 

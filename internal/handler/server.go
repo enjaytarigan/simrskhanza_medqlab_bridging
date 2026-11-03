@@ -34,7 +34,7 @@ func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
 		lisTests:     repository.NewLisTestRepo(db),
 		mappings:     repository.NewMappingRepo(db, simrs),
 		simrs:        simrs,
-		medqlab:      medqlab.NewService(db, cfg.MedQLabBridgingNIP, cfg.Location),
+		medqlab:      medqlab.NewService(db, cfg.MedQLabBridgingNIP, cfg.Location, cfg.OrderOnlyRM),
 		bridgingLogs: repository.NewBridgingLogRepo(db),
 	}, nil
 }
