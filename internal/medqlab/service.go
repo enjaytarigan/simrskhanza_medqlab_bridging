@@ -146,10 +146,15 @@ func (s *Service) ProcessEnvelope(ctx context.Context, env *Envelope, rawJSON []
 
 	result, err := s.process(ctx, medqlabOrder, noLab, noRawat, resp)
 	if err != nil {
-		log.Printf("[medqlab] step=process FAILED inbox_id=%d err=%v duration=%s",
-			inboxID, err, time.Since(start).Round(time.Millisecond))
-		_ = s.updateInbox(ctx, inboxID, "failed", 0, 0, 0, err.Error())
-		return nil, err
+		mapped, unmapped := 0, 0
+		if result != nil {
+			mapped, unmapped = result.Mapped, result.Unmapped
+			result.InboxID = inboxID
+		}
+		log.Printf("[medqlab] step=process FAILED inbox_id=%d mapped=%d unmapped=%d err=%v duration=%s",
+			inboxID, mapped, unmapped, err, time.Since(start).Round(time.Millisecond))
+		_ = s.updateInbox(ctx, inboxID, "failed", mapped, unmapped, 0, err.Error())
+		return result, err
 	}
 	result.InboxID = inboxID
 	_ = s.updateInbox(ctx, inboxID, "posted", result.Mapped, result.Unmapped, result.DetailWritten, "")
@@ -203,7 +208,7 @@ func (s *Service) process(ctx context.Context, medqlabOrder, noLab, noRawat stri
 	}
 	log.Printf("[medqlab] step=load_order_panels count=%d kd=%v", len(panels), panels)
 
-	orderedTemplates, err := s.loadOrderedTemplates(ctx, noOrder)
+	orderedTemplates, err := s.loadOrderedTemplates(ctx, noOrder, panels)
 	if err != nil {
 		log.Printf("[medqlab] step=load_ordered_templates FAIL: %v", err)
 		return nil, err
@@ -222,6 +227,7 @@ func (s *Service) process(ctx context.Context, medqlabOrder, noLab, noRawat stri
 
 	var mapped []mappedRow
 	unmapped := 0
+	skippedNotOnOrder := 0
 	for _, leaf := range leaves {
 		idTpl, ok := idTemplateByLis[leaf.LisTestID]
 		if !ok || idTpl == 0 {
@@ -231,6 +237,7 @@ func (s *Service) process(ctx context.Context, medqlabOrder, noLab, noRawat stri
 		}
 		if !orderedTemplates[idTpl] {
 			unmapped++
+			skippedNotOnOrder++
 			log.Printf("[medqlab] step=map_leaf SKIP testId=%s id_template=%d not on order %s", leaf.LisTestID, idTpl, noOrder)
 			continue
 		}
@@ -244,10 +251,20 @@ func (s *Service) process(ctx context.Context, medqlabOrder, noLab, noRawat stri
 		log.Printf("[medqlab] step=map_leaf OK testId=%s -> id_template=%d kd_jenis_prw=%s nilai=%q",
 			leaf.LisTestID, idTpl, kd, truncate(leaf.Nilai, 80))
 	}
-	log.Printf("[medqlab] step=map_summary mapped=%d unmapped=%d", len(mapped), unmapped)
+	log.Printf("[medqlab] step=map_summary mapped=%d unmapped=%d mapping_hits=%d ordered_templates=%d panels=%v skipped_not_on_order=%d",
+		len(mapped), unmapped, len(idTemplateByLis), len(orderedTemplates), panels, skippedNotOnOrder)
 	if len(mapped) == 0 {
-		log.Printf("[medqlab] FAIL: no mapped examination results")
-		return nil, ErrNoMappedResults
+		errMsg := fmt.Errorf("%w: leaves=%d mapping_hits=%d ordered_templates=%d panels=%v skipped_not_on_order=%d",
+			ErrNoMappedResults, len(leaves), len(idTemplateByLis), len(orderedTemplates), panels, skippedNotOnOrder)
+		log.Printf("[medqlab] FAIL: %v", errMsg)
+		return &ProcessResult{
+			MedQLabOrder:   medqlabOrder,
+			NoOrder:        noOrder,
+			NoLaboratorium: noLab,
+			NoRawat:        perm.NoRawat,
+			Mapped:         0,
+			Unmapped:       unmapped,
+		}, errMsg
 	}
 
 	tgl, jam, err := s.resolveExamDateTime(mapped)
@@ -801,14 +818,20 @@ SELECT kd_jenis_prw FROM permintaan_pemeriksaan_lab WHERE noorder=?`, noOrder)
 	return panels, rows.Err()
 }
 
-func (s *Service) loadOrderedTemplates(ctx context.Context, noOrder string) (map[int]bool, error) {
+// loadOrderedTemplates returns id_template values that may receive hasil for this order.
+// Sources (union):
+//  1. permintaan_detail_permintaan_lab — explicit ordered items
+//  2. template_laboratorium for every kd_jenis_prw on permintaan_pemeriksaan_lab —
+//     so a panel-only order (common when detail rows are missing) still accepts
+//     mapped leaves under that panel (e.g. A01 → Hemoglobin/Eritrosit/…).
+func (s *Service) loadOrderedTemplates(ctx context.Context, noOrder string, panels []string) (map[int]bool, error) {
+	out := map[int]bool{}
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id_template FROM permintaan_detail_permintaan_lab WHERE noorder=?`, noOrder)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := map[int]bool{}
 	for rows.Next() {
 		var id int
 		if err := rows.Scan(&id); err != nil {
@@ -816,7 +839,38 @@ SELECT id_template FROM permintaan_detail_permintaan_lab WHERE noorder=?`, noOrd
 		}
 		out[id] = true
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	fromDetail := len(out)
+	if len(panels) > 0 {
+		ph := make([]string, len(panels))
+		args := make([]any, len(panels))
+		for i, p := range panels {
+			ph[i] = "?"
+			args[i] = p
+		}
+		prows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
+SELECT id_template FROM template_laboratorium WHERE kd_jenis_prw IN (%s)`, strings.Join(ph, ",")), args...)
+		if err != nil {
+			return nil, err
+		}
+		defer prows.Close()
+		for prows.Next() {
+			var id int
+			if err := prows.Scan(&id); err != nil {
+				return nil, err
+			}
+			out[id] = true
+		}
+		if err := prows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	log.Printf("[medqlab] step=load_ordered_templates detail=%d panel_catalog_union=%d panels=%v",
+		fromDetail, len(out), panels)
+	return out, nil
 }
 
 func (s *Service) loadMapping(ctx context.Context, leaves []LeafResult, panels []string) (map[string]int, error) {
