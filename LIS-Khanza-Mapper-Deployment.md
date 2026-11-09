@@ -24,7 +24,7 @@ Aplikasi menggunakan **database MySQL/MariaDB produksi SIMRS** yang sudah berjal
 | Migrasi DB | Berjalan **otomatis** setiap kali aplikasi start (`lis_tests`, `lis_mapping_tests`, `lis_hasil_inbox`, `lis_order_outbox`) |
 | Autentikasi UI/API mapping | HTTP Basic Auth (`AUTH_USERNAME` / `AUTH_PASSWORD`) |
 | Autentikasi push hasil | API key (`MEDQLAB_WEBHOOK_API_KEY`) |
-| UI audit | `/bridging-logs` — log hasil yang di-push |
+| UI audit | `/bridging-logs` — log hasil; `/order-logs` — log order outbox + reprocess `failed` |
 | Poller order | Opt-in (`MEDQLAB_ORDER_POLL`); uji order+hasil dengan `MEDQLAB_ORDER_ONLY_RM` |
 
 ### 1.1 Alur data
@@ -347,6 +347,7 @@ curl -u admin:KataSandiAnda http://localhost:8080/bridging-logs
 Akses operator: `http://<IP-server-produksi>:8080` dengan kredensial `AUTH_USERNAME` / `AUTH_PASSWORD`.
 
 - **Log Bridging:** `http://<IP-server>:8080/bridging-logs`
+- **Log Order** (reprocess `failed`): `http://<IP-server>:8080/order-logs`
 - Disarankan membatasi akses jaringan (VPN, firewall internal, reverse proxy dengan TLS).
 
 ### 6.4 Pembaruan versi
@@ -393,7 +394,7 @@ LIMIT 20;
 ```
 
    - `sent` + nomor lab: MedQLab menerima order.
-   - `failed`: baca `error_message` (order pendek, tanpa item, kamar ranap tidak ketemu, ditolak LIS).
+   - `failed`: baca `error_message` (order pendek, tanpa item, kamar ranap tidak ketemu, ditolak LIS / unmapped). Perbaiki mapping di **katalog MedQLab** (`id_test` = `kd_jenis_prw`), lalu buka UI **Log Order** (`/order-logs`) → Detail → **Reprocess** (hanya status `failed`; butuh URL/cons/sign MedQLab di `.env`).
    - Order RM lain **tidak** muncul di outbox.
 
 7. Uji hasil: MedQLab push ke `/api/v1/medqlab/hasil`.
@@ -418,7 +419,8 @@ LIMIT 20;
 | Push hasil `403` | RM tidak di allowlist uji | Pastikan `no_rkm_medis` ada di `MEDQLAB_ORDER_ONLY_RM`, atau kosongkan filter saat go-live |
 | Push hasil `503` | Key/NIP belum di-set | Isi `MEDQLAB_WEBHOOK_API_KEY` dan `MEDQLAB_BRIDGING_NIP`, restart |
 | Hasil tidak masuk SIMRS | Order/mapping tidak cocok | Cek log app dan UI `/bridging-logs` |
-| Order tidak masuk MedQLab | Poller off / since terlalu baru / outbox `failed` / RM tidak di allowlist | Set `MEDQLAB_ORDER_POLL=true` dan `MEDQLAB_ORDER_SINCE`; jika uji, pastikan RM ada di `MEDQLAB_ORDER_ONLY_RM`; cek log `[orderpoll]` dan `lis_order_outbox` |
+| Order tidak masuk MedQLab | Poller off / since terlalu baru / outbox `failed` / RM tidak di allowlist | Set `MEDQLAB_ORDER_POLL=true` dan `MEDQLAB_ORDER_SINCE`; jika uji, pastikan RM ada di `MEDQLAB_ORDER_ONLY_RM`; cek log `[orderpoll]`, UI `/order-logs`, dan `lis_order_outbox` |
+| Order `failed` (unmapped / ditolak LIS) | Mapping katalog MedQLab belum cocok | Perbaiki mapping di MedQLab (`kd_jenis_prw`), lalu **Reprocess** di `/order-logs/{noorder}` (bukan `lis_mapping_tests`) |
 | Order terkirim ganda | `ApiMEDQLAB` Khanza dan poller sama-sama aktif | Matikan kirim order dari UI Khanza untuk order yang di-poll mapper |
 | Order pasien uji tidak terkirim | RM tidak cocok / `tgl_permintaan` sebelum since | Samakan `no_rkm_medis` (termasuk nol di depan) dengan `MEDQLAB_ORDER_ONLY_RM` |
 

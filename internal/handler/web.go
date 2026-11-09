@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"lis-khanza-mapper/internal/medqlab/orderpoll"
 	"lis-khanza-mapper/internal/model"
 	"lis-khanza-mapper/internal/repository"
 )
@@ -27,6 +28,8 @@ type pageData struct {
 	Mappings      []model.Mapping
 	BridgingLogs  model.BridgingLogListResult
 	BridgingLog   *model.BridgingLog
+	OrderLogs     model.OrderOutboxListResult
+	OrderLog      *model.OrderOutbox
 	Bulk          bulkPageData
 	CatalogImport *model.CatalogImportResult
 	CatalogHeader string
@@ -312,4 +315,92 @@ func (s *Server) bridgingLogDetail(w http.ResponseWriter, r *http.Request) {
 		Title:       fmt.Sprintf("Log Bridging #%d", row.ID),
 		BridgingLog: row,
 	})
+}
+
+func (s *Server) orderLogList(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+	status := r.URL.Query().Get("status")
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	const limit = 50
+	result, err := s.orderOutbox.List(r.Context(), q, status, page, limit)
+	if err != nil {
+		s.view(w, "order_logs.html", pageData{Title: "Log Order", Error: err.Error()})
+		return
+	}
+	hasNext := page*limit < result.Total
+	s.view(w, "order_logs.html", pageData{
+		Title:     "Log Order",
+		OrderLogs: result,
+		Query:     map[string]string{"q": q, "status": status},
+		PrevPage:  page - 1,
+		NextPage:  page + 1,
+		HasNext:   hasNext,
+		Flash:     r.URL.Query().Get("flash"),
+		Error:     r.URL.Query().Get("error"),
+	})
+}
+
+func (s *Server) orderLogDetail(w http.ResponseWriter, r *http.Request) {
+	noorder := chi.URLParam(r, "noorder")
+	row, err := s.orderOutbox.GetByNoorder(r.Context(), noorder)
+	if err != nil {
+		s.view(w, "order_log_detail.html", pageData{Title: "Log Order", Error: err.Error()})
+		return
+	}
+	if row == nil {
+		http.NotFound(w, r)
+		return
+	}
+	payload := row.PayloadJSON
+	if payload != "" {
+		var pretty any
+		if json.Unmarshal([]byte(payload), &pretty) == nil {
+			if b, err := json.MarshalIndent(pretty, "", "  "); err == nil {
+				row.PayloadJSON = string(b)
+			}
+		}
+	}
+	s.view(w, "order_log_detail.html", pageData{
+		Title:    fmt.Sprintf("Log Order %s", row.NoOrder),
+		OrderLog: row,
+		Flash:    r.URL.Query().Get("flash"),
+		Error:    r.URL.Query().Get("error"),
+	})
+}
+
+// orderReprocessBlockReason returns a non-empty message when reprocess must be refused.
+func orderReprocessBlockReason(status string, processorConfigured bool) string {
+	if !orderpoll.CanReprocess(status) {
+		return "only failed orders can be reprocessed (sent must not be resent)"
+	}
+	if !processorConfigured {
+		return "order processor is not configured (need MEDQLAB_BASE_URL, MEDQLAB_X_CONS, MEDQLAB_X_SIGN)"
+	}
+	return ""
+}
+
+func (s *Server) orderLogReprocess(w http.ResponseWriter, r *http.Request) {
+	noorder := strings.TrimSpace(chi.URLParam(r, "noorder"))
+	detailURL := "/order-logs/" + url.PathEscape(noorder)
+	row, err := s.orderOutbox.GetByNoorder(r.Context(), noorder)
+	if err != nil {
+		http.Redirect(w, r, detailURL+"?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	if row == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if reason := orderReprocessBlockReason(row.Status, s.orderProc != nil); reason != "" {
+		http.Redirect(w, r, detailURL+"?error="+url.QueryEscape(reason), http.StatusSeeOther)
+		return
+	}
+	if err := s.orderProc.ProcessOne(r.Context(), noorder); err != nil {
+		http.Redirect(w, r, detailURL+"?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, detailURL+"?flash="+url.QueryEscape("reprocessed"), http.StatusSeeOther)
 }

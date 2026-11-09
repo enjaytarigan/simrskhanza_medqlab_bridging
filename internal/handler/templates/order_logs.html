@@ -1,0 +1,94 @@
+{{define "order_logs.html"}}
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} — LIS Khanza Mapper</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    nav a { margin-right: 1rem; }
+    table { font-size: 0.9rem; }
+    .flash { color: green; }
+    .err { color: #c00; }
+    .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 0.25rem; font-size: 0.8rem; }
+    .badge-sent { background: #d4edda; color: #155724; }
+    .badge-failed { background: #f8d7da; color: #721c24; }
+    .badge-claimed { background: #fff3cd; color: #856404; }
+    .err-cell { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hint { color: #555; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+<main class="container">
+{{template "nav" .}}
+<h1>{{.Title}}</h1>
+<p class="hint">Order bridge (mapper → MedQLab <code>saveOrder</code>). <code>id_test</code> = Khanza <code>kd_jenis_prw</code>.
+  “Unmapped” failures are fixed in the <strong>MedQLab</strong> catalog, not <code>lis_mapping_tests</code>.</p>
+{{if .Flash}}<p class="flash">{{.Flash}}</p>{{end}}
+{{if .Error}}<p class="err">{{.Error}}</p>{{end}}
+
+<form method="get" class="grid">
+  <input type="search" name="q" placeholder="noorder / no_rawat / no_laboratorium / error" value="{{index .Query "q"}}">
+  <select name="status">
+    <option value="">All status</option>
+    <option value="sent" {{if eq (index .Query "status") "sent"}}selected{{end}}>sent</option>
+    <option value="failed" {{if eq (index .Query "status") "failed"}}selected{{end}}>failed</option>
+    <option value="claimed" {{if eq (index .Query "status") "claimed"}}selected{{end}}>claimed</option>
+  </select>
+  <button type="submit">Filter</button>
+</form>
+
+<p><small>Total: {{.OrderLogs.Total}} · Page {{.OrderLogs.Page}}</small></p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Updated</th>
+      <th>noorder</th>
+      <th>no_rawat</th>
+      <th>no_laboratorium</th>
+      <th>Status</th>
+      <th>Error</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {{range .OrderLogs.Items}}
+  <tr>
+    <td><small>{{.UpdatedAt.Format "2006-01-02 15:04:05"}}</small></td>
+    <td><code>{{.NoOrder}}</code></td>
+    <td><code>{{.NoRawat}}</code></td>
+    <td><code>{{.NoLaboratorium}}</code></td>
+    <td><span class="badge badge-{{.Status}}">{{.Status}}</span></td>
+    <td class="err-cell" title="{{.ErrorMessage}}">{{.ErrorMessage}}</td>
+    <td>
+      <a href="/order-logs/{{.NoOrder}}">Detail</a>
+      {{if eq .Status "failed"}}
+      ·
+      <form method="post" action="/order-logs/{{.NoOrder}}/reprocess" style="display:inline">
+        <button type="submit" class="outline" onclick="return confirm('Reprocess {{.NoOrder}} to MedQLab?')">Reprocess</button>
+      </form>
+      {{end}}
+    </td>
+  </tr>
+  {{else}}
+  <tr><td colspan="7">Belum ada log order outbox.</td></tr>
+  {{end}}
+  </tbody>
+</table>
+
+{{if gt .OrderLogs.Total .OrderLogs.Limit}}
+<nav>
+  {{if gt .OrderLogs.Page 1}}
+  <a href="?q={{index .Query "q"}}&status={{index .Query "status"}}&page={{.PrevPage}}">← Prev</a>
+  {{end}}
+  {{if .HasNext}}
+  <a href="?q={{index .Query "q"}}&status={{index .Query "status"}}&page={{.NextPage}}">Next →</a>
+  {{end}}
+</nav>
+{{end}}
+</main>
+</body>
+</html>
+{{end}}

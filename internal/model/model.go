@@ -71,6 +71,27 @@ type BridgingLogListResult struct {
 	Limit int
 }
 
+// OrderOutbox is one lis_order_outbox row (mapper → MedQLab saveOrder).
+type OrderOutbox struct {
+	NoOrder        string
+	NoRawat        string
+	NoLaboratorium string
+	Status         string
+	ErrorMessage   string
+	PayloadJSON    string
+	ClaimedAt      time.Time
+	SentAt         *time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+type OrderOutboxListResult struct {
+	Items []OrderOutbox
+	Total int
+	Page  int
+	Limit int
+}
+
 type DashboardStats struct {
 	LisTestsActive int
 	MappingsActive int

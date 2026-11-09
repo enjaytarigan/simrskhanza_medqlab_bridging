@@ -1,12 +1,76 @@
 package orderpoll
 
 import (
+	"context"
+	"database/sql"
 	"strings"
 	"testing"
 	"time"
 
 	"lis-khanza-mapper/internal/config"
 )
+
+func TestCanReprocess(t *testing.T) {
+	cases := []struct {
+		status string
+		want   bool
+	}{
+		{"failed", true},
+		{"FAILED", true},
+		{" failed ", true},
+		{"sent", false},
+		{"claimed", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		if got := CanReprocess(tc.status); got != tc.want {
+			t.Fatalf("CanReprocess(%q)=%v want %v", tc.status, got, tc.want)
+		}
+	}
+}
+
+func TestNewProcessorRequiresCredentials(t *testing.T) {
+	db := &sql.DB{}
+	if p := NewProcessor(config.Config{MapperMode: config.ModeSIMRS}, db); p != nil {
+		t.Fatal("expected nil without MedQLab credentials")
+	}
+	if p := NewProcessor(config.Config{
+		MapperMode:     config.ModeSIMRS,
+		MedQLabBaseURL: "https://lis.example",
+		MedQLabXCons:   "c",
+		MedQLabXSign:   "s",
+	}, nil); p != nil {
+		t.Fatal("expected nil without db")
+	}
+	if p := NewProcessor(config.Config{
+		MapperMode:     config.ModeStandalone,
+		MedQLabBaseURL: "https://lis.example",
+		MedQLabXCons:   "c",
+		MedQLabXSign:   "s",
+	}, db); p != nil {
+		t.Fatal("expected nil in standalone")
+	}
+	p := NewProcessor(config.Config{
+		MapperMode:     config.ModeSIMRS,
+		MedQLabBaseURL: "https://lis.example",
+		MedQLabXCons:   "c",
+		MedQLabXSign:   "s",
+	}, db)
+	if p == nil {
+		t.Fatal("expected processor with credentials")
+	}
+}
+
+func TestProcessOneNilAndEmpty(t *testing.T) {
+	var nilP *Poller
+	if err := nilP.ProcessOne(context.Background(), "PK1"); err == nil {
+		t.Fatal("nil processor must error")
+	}
+	p := &Poller{}
+	if err := p.ProcessOne(context.Background(), "  "); err == nil {
+		t.Fatal("empty noorder must error")
+	}
+}
 
 func TestNewDisabledWithoutFlag(t *testing.T) {
 	p := New(config.Config{MapperMode: config.ModeSIMRS}, nil)

@@ -518,9 +518,9 @@ INSERT INTO periksa_lab (
 		}
 		mode := panelMode[m.KdJenisPrw]
 		detailTariff := detailTariffForMode(mode, tpl)
-		nilai := truncate(m.Leaf.Nilai, 500)
-		rujukan := truncate(m.Leaf.NilaiRujukan, 500)
-		ket := truncate(m.Leaf.Keterangan, 200)
+		nilai := m.Leaf.Nilai
+		rujukan := m.Leaf.NilaiRujukan
+		ket := m.Leaf.Keterangan
 
 		action, err := upsertDetail(ctx, tx, perm.NoRawat, m.KdJenisPrw, tgl, jam, m.IDTemplate,
 			nilai, rujukan, ket, detailTariff)

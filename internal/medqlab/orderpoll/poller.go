@@ -29,14 +29,51 @@ func New(cfg config.Config, db *sql.DB) *Poller {
 	if !cfg.OrderPoll || cfg.Standalone() || db == nil {
 		return nil
 	}
-	return &Poller{
-		db:       db,
-		client:   NewClient(cfg.MedQLabBaseURL, cfg.MedQLabXCons, cfg.MedQLabXSign),
-		since:    cfg.OrderPollSince,
-		interval: cfg.OrderPollInterval,
-		claimTTL: cfg.OrderClaimTimeout,
-		onlyRM:   append([]string(nil), cfg.OrderOnlyRM...),
+	p := newPoller(cfg, db)
+	if p == nil {
+		return nil
 	}
+	p.since = cfg.OrderPollSince
+	p.interval = cfg.OrderPollInterval
+	p.claimTTL = cfg.OrderClaimTimeout
+	p.onlyRM = append([]string(nil), cfg.OrderOnlyRM...)
+	return p
+}
+
+// NewProcessor builds a poller usable for on-demand ProcessOne (UI reprocess).
+// Requires MedQLab URL/cons/sign; does not require MEDQLAB_ORDER_POLL=true.
+func NewProcessor(cfg config.Config, db *sql.DB) *Poller {
+	if cfg.Standalone() || db == nil {
+		return nil
+	}
+	return newPoller(cfg, db)
+}
+
+func newPoller(cfg config.Config, db *sql.DB) *Poller {
+	if strings.TrimSpace(cfg.MedQLabBaseURL) == "" || strings.TrimSpace(cfg.MedQLabXCons) == "" || strings.TrimSpace(cfg.MedQLabXSign) == "" {
+		return nil
+	}
+	return &Poller{
+		db:     db,
+		client: NewClient(cfg.MedQLabBaseURL, cfg.MedQLabXCons, cfg.MedQLabXSign),
+	}
+}
+
+// CanReprocess is true only for failed outbox rows (sent must not be resent).
+func CanReprocess(status string) bool {
+	return strings.EqualFold(strings.TrimSpace(status), "failed")
+}
+
+// ProcessOne sends one permintaan_lab to MedQLab and updates lis_order_outbox.
+func (p *Poller) ProcessOne(ctx context.Context, noorder string) error {
+	if p == nil {
+		return fmt.Errorf("order processor is not configured (need MEDQLAB_BASE_URL, MEDQLAB_X_CONS, MEDQLAB_X_SIGN)")
+	}
+	noorder = strings.TrimSpace(noorder)
+	if noorder == "" {
+		return fmt.Errorf("noorder is required")
+	}
+	return p.process(ctx, noorder)
 }
 
 func (p *Poller) Run(ctx context.Context) {
