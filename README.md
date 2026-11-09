@@ -111,6 +111,9 @@ HTTP Basic auth (`AUTH_USERNAME` / `AUTH_PASSWORD`):
 | `/mappings` | View / edit mappings |
 | `/bridging-logs` | Audit log of pushed hasil |
 | `/bridging-logs/{id}` | Payload + status detail |
+| `/order-logs` | Audit log of order outbox (`lis_order_outbox`) |
+| `/order-logs/{noorder}` | Payload + status; **Reprocess** on `failed` only |
+| `POST /order-logs/{noorder}/reprocess` | Sync retry `saveOrder` after MedQLab mapping fix |
 
 ## API
 
@@ -161,6 +164,7 @@ When `MEDQLAB_ORDER_POLL=true`, a background loop claims one new `permintaan_lab
 - Cancel / change-after-send is not handled.
 - Standalone mode cannot enable the poller.
 - `MEDQLAB_ORDER_ONLY_RM` limits order claims and hasil writes to those medical-record numbers (testing). Empty means all patients. Hasil for other RMs returns HTTP 403.
+- After fixing MedQLab catalog mapping (order `id_test` = Khanza `kd_jenis_prw`; not `lis_mapping_tests`), open **Log Order**, open a `failed` row, and click **Reprocess**. That runs `saveOrder` synchronously (needs `MEDQLAB_BASE_URL` / `X_CONS` / `X_SIGN`). `sent` rows cannot be resent.
 
 ## Tables
 

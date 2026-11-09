@@ -1,0 +1,60 @@
+{{define "order_log_detail.html"}}
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} — LIS Khanza Mapper</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    nav a { margin-right: 1rem; }
+    .flash { color: green; }
+    .err { color: #c00; }
+    .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 0.25rem; font-size: 0.8rem; }
+    .badge-sent { background: #d4edda; color: #155724; }
+    .badge-failed { background: #f8d7da; color: #721c24; }
+    .badge-claimed { background: #fff3cd; color: #856404; }
+    pre.payload { max-height: 480px; overflow: auto; font-size: 0.8rem; background: #f6f8fa; padding: 1rem; }
+    .hint { color: #555; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+<main class="container">
+{{template "nav" .}}
+<p><a href="/order-logs">← Log Order</a></p>
+<h1>{{.Title}}</h1>
+{{if .Flash}}<p class="flash">{{.Flash}}</p>{{end}}
+{{if .Error}}<p class="err">{{.Error}}</p>{{end}}
+{{with .OrderLog}}
+<article>
+  <header>
+    <code>{{.NoOrder}}</code>
+    <span class="badge badge-{{.Status}}">{{.Status}}</span>
+  </header>
+  <div class="grid">
+    <div><strong>no_rawat</strong><br><code>{{.NoRawat}}</code></div>
+    <div><strong>no_laboratorium</strong><br><code>{{.NoLaboratorium}}</code></div>
+    <div><strong>Claimed</strong><br>{{.ClaimedAt.Format "2006-01-02 15:04:05"}}</div>
+    <div><strong>Sent</strong><br>{{if .SentAt}}{{.SentAt.Format "2006-01-02 15:04:05"}}{{else}}—{{end}}</div>
+  </div>
+  <div class="grid">
+    <div><strong>Created</strong><br>{{.CreatedAt.Format "2006-01-02 15:04:05"}}</div>
+    <div><strong>Updated</strong><br>{{.UpdatedAt.Format "2006-01-02 15:04:05"}}</div>
+  </div>
+  {{if .ErrorMessage}}
+  <p class="err"><strong>Error:</strong> {{.ErrorMessage}}</p>
+  {{end}}
+  {{if eq .Status "failed"}}
+  <form method="post" action="/order-logs/{{.NoOrder}}/reprocess">
+    <button type="submit" onclick="return confirm('Reprocess {{.NoOrder}} to MedQLab?')">Reprocess</button>
+  </form>
+  <p class="hint">Reprocess sends <code>saveOrder</code> again after MedQLab catalog mapping is fixed. Requires MedQLab URL/cons/sign in <code>.env</code>.</p>
+  {{end}}
+  <h3>Payload</h3>
+  <pre class="payload">{{.PayloadJSON}}</pre>
+</article>
+{{end}}
+</main>
+</body>
+</html>
+{{end}}

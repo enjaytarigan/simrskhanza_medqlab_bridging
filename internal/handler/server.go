@@ -10,6 +10,7 @@ import (
 	"lis-khanza-mapper/internal/auth"
 	"lis-khanza-mapper/internal/config"
 	"lis-khanza-mapper/internal/medqlab"
+	"lis-khanza-mapper/internal/medqlab/orderpoll"
 	"lis-khanza-mapper/internal/repository"
 )
 
@@ -21,6 +22,8 @@ type Server struct {
 	simrs        *repository.SimrsRepo
 	medqlab      *medqlab.Service
 	bridgingLogs *repository.BridgingLogRepo
+	orderOutbox  *repository.OrderOutboxRepo
+	orderProc    *orderpoll.Poller
 }
 
 func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
@@ -36,6 +39,8 @@ func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
 		simrs:        simrs,
 		medqlab:      medqlab.NewService(db, cfg.MedQLabBridgingNIP, cfg.Location, cfg.OrderOnlyRM),
 		bridgingLogs: repository.NewBridgingLogRepo(db),
+		orderOutbox:  repository.NewOrderOutboxRepo(db),
+		orderProc:    orderpoll.NewProcessor(cfg, db),
 	}, nil
 }
 
@@ -84,6 +89,10 @@ func (s *Server) Router() http.Handler {
 
 		pr.Get("/bridging-logs", s.bridgingLogList)
 		pr.Get("/bridging-logs/{id}", s.bridgingLogDetail)
+
+		pr.Get("/order-logs", s.orderLogList)
+		pr.Get("/order-logs/{noorder}", s.orderLogDetail)
+		pr.Post("/order-logs/{noorder}/reprocess", s.orderLogReprocess)
 
 		// JSON API
 		pr.Route("/api/v1", func(api chi.Router) {
