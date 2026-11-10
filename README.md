@@ -78,7 +78,7 @@ Local Go against `.env`:
 | `MEDQLAB_BASE_URL` | When poll is on | MedQLab origin, no trailing slash (app appends `/api/v1/saveOrder`) |
 | `MEDQLAB_X_CONS` | When poll is on | `X-cons` header (same cons id Khanza `ApiMEDQLAB` sends) |
 | `MEDQLAB_X_SIGN` | When poll is on | `X-sign` header (raw secret, not HMAC — matches Khanza Java) |
-| `MEDQLAB_ORDER_SINCE` | When poll is on | Only orders with `tgl_permintaan` on or after this `yyyy-MM-dd` |
+| `MEDQLAB_ORDER_SINCE` | When poll is on | Cutoff for orders: `yyyy-MM-dd` (start of day) or `yyyy-MM-dd HH:mm[:ss]` in `APP_TIMEZONE`/`TZ`; compares `tgl_permintaan` + `jam_permintaan` |
 | `MEDQLAB_ORDER_INTERVAL` | No | Poll interval (default `5s`) |
 | `MEDQLAB_ORDER_CLAIM_TIMEOUT` | No | Reclaim a stuck `00` claim after this duration (default `2m`) |
 | `MEDQLAB_ORDER_ONLY_RM` | No | Comma-separated `no_rkm_medis` for order poller and hasil push. Empty = all patients. Set during testing |
@@ -157,7 +157,7 @@ Requires `MEDQLAB_WEBHOOK_API_KEY` in `.env`. NIP is required from payload verif
 
 ### Order poller (simrs)
 
-When `MEDQLAB_ORDER_POLL=true`, a background loop claims one new `permintaan_lab` at a time (oldest `tgl_permintaan` on or after `MEDQLAB_ORDER_SINCE`), POSTs `{MEDQLAB_BASE_URL}/api/v1/saveOrder` with the same JSON as Khanza `ApiMEDQLAB.kirimRalan` / `kirimRanap`, and stores the MedQLab lab number in `lis_order_outbox`.
+When `MEDQLAB_ORDER_POLL=true`, a background loop claims one new `permintaan_lab` at a time (oldest on/after `MEDQLAB_ORDER_SINCE` by `tgl_permintaan` + `jam_permintaan`), POSTs `{MEDQLAB_BASE_URL}/api/v1/saveOrder` with the same JSON as Khanza `ApiMEDQLAB.kirimRalan` / `kirimRanap`, and stores the MedQLab lab number in `lis_order_outbox`.
 
 - `no_order` is `noorder.substring(4, 14)` (example `PK202602250001` → `2602250001`); `no_pendaftaran` is `no_rawat`.
 - A claim uses `no_laboratorium=00`. Stale claims older than `MEDQLAB_ORDER_CLAIM_TIMEOUT` are retried. Failed rows are not retried automatically.

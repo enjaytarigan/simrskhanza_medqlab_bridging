@@ -61,8 +61,45 @@ func TestLoadOrderPollRequiresFields(t *testing.T) {
 	if cfg.OrderClaimTimeout != 90*time.Second {
 		t.Fatalf("claim timeout=%s", cfg.OrderClaimTimeout)
 	}
-	if cfg.OrderPollSince.Format("2006-01-02") != "2026-10-01" {
+	if cfg.OrderPollSince.Format("2006-01-02 15:04:05") != "2026-10-01 00:00:00" {
 		t.Fatalf("since=%v", cfg.OrderPollSince)
+	}
+
+	t.Setenv("MEDQLAB_ORDER_SINCE", "2026-11-10 14:00:00")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.OrderPollSince.Format("2006-01-02 15:04:05") != "2026-11-10 14:00:00" {
+		t.Fatalf("since with time=%v", cfg.OrderPollSince)
+	}
+}
+
+func TestParseOrderPollSince(t *testing.T) {
+	loc, err := time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"2026-11-10", "2026-11-10 00:00:00"},
+		{"2026-11-10 14:00", "2026-11-10 14:00:00"},
+		{"2026-11-10 14:00:00", "2026-11-10 14:00:00"},
+		{"2026-11-10T14:00:00", "2026-11-10 14:00:00"},
+	}
+	for _, tc := range cases {
+		got, err := ParseOrderPollSince(tc.in, loc)
+		if err != nil {
+			t.Fatalf("%q: %v", tc.in, err)
+		}
+		if got.Format("2006-01-02 15:04:05") != tc.want {
+			t.Fatalf("%q => %s want %s", tc.in, got.Format("2006-01-02 15:04:05"), tc.want)
+		}
+	}
+	if _, err := ParseOrderPollSince("10/11/2026", loc); err == nil {
+		t.Fatal("expected parse error")
 	}
 }
 

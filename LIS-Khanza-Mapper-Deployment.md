@@ -176,7 +176,7 @@ MEDQLAB_ORDER_POLL=false
 MEDQLAB_BASE_URL=https://lis.example
 MEDQLAB_X_CONS=consid-khanza
 MEDQLAB_X_SIGN=secret-mentah-bukan-hmac
-MEDQLAB_ORDER_SINCE=2026-10-01
+MEDQLAB_ORDER_SINCE=2026-11-10 14:00:00
 MEDQLAB_ORDER_INTERVAL=5s
 MEDQLAB_ORDER_CLAIM_TIMEOUT=2m
 # Uji: hanya nomor RM ini yang dikirim. Kosongkan saat go-live semua pasien.
@@ -219,7 +219,7 @@ DATABASE_DSN=spv:server@tcp(192.168.1.10:3306)/sik?parseTime=true&loc=Local&char
 | `MEDQLAB_BASE_URL` | Jika poll on | — | Origin MedQLab (tanpa trailing slash) |
 | `MEDQLAB_X_CONS` | Jika poll on | — | Header `X-cons` (cons id Khanza) |
 | `MEDQLAB_X_SIGN` | Jika poll on | — | Header `X-sign` (secret mentah, bukan HMAC) |
-| `MEDQLAB_ORDER_SINCE` | Jika poll on | — | `yyyy-MM-dd`; hanya order dengan `tgl_permintaan` pada/sesudah tanggal ini |
+| `MEDQLAB_ORDER_SINCE` | Jika poll on | — | Cutoff order: `yyyy-MM-dd` (mulai 00:00) atau `yyyy-MM-dd HH:mm[:ss]` (zona `APP_TIMEZONE`/`TZ`); membandingkan `tgl_permintaan` + `jam_permintaan` |
 | `MEDQLAB_ORDER_INTERVAL` | Tidak | `5s` | Jeda antar tick poller |
 | `MEDQLAB_ORDER_CLAIM_TIMEOUT` | Tidak | `2m` | Klaim `00` yang macet boleh diambil ulang setelah durasi ini |
 | `MEDQLAB_ORDER_ONLY_RM` | Tidak | kosong | Daftar `no_rkm_medis` dipisah koma. Kosong = semua pasien. Terisi = hanya RM itu untuk **order dan hasil** (mode uji) |
@@ -374,7 +374,7 @@ docker compose down
 Gunakan ini sebelum membuka bridging ke semua pasien. Filter yang sama (`MEDQLAB_ORDER_ONLY_RM`) membatasi **order poller** dan **write hasil**.
 
 1. Pastikan mapping LIS → template sudah ada di UI (`/map/bulk`).
-2. Pilih satu atau dua `no_rkm_medis` uji yang punya `permintaan_lab` baru (`tgl_permintaan` ≥ `MEDQLAB_ORDER_SINCE` jika uji order).
+2. Pilih satu atau dua `no_rkm_medis` uji yang punya `permintaan_lab` baru (tanggal+jam ≥ `MEDQLAB_ORDER_SINCE` jika uji order).
 3. Set:
 
 ```env
@@ -422,7 +422,7 @@ LIMIT 20;
 | Order tidak masuk MedQLab | Poller off / since terlalu baru / outbox `failed` / RM tidak di allowlist | Set `MEDQLAB_ORDER_POLL=true` dan `MEDQLAB_ORDER_SINCE`; jika uji, pastikan RM ada di `MEDQLAB_ORDER_ONLY_RM`; cek log `[orderpoll]`, UI `/order-logs`, dan `lis_order_outbox` |
 | Order `failed` (unmapped / ditolak LIS) | Mapping katalog MedQLab belum cocok | Perbaiki mapping di MedQLab (`kd_jenis_prw`), lalu **Reprocess** di `/order-logs/{noorder}` (bukan `lis_mapping_tests`) |
 | Order terkirim ganda | `ApiMEDQLAB` Khanza dan poller sama-sama aktif | Matikan kirim order dari UI Khanza untuk order yang di-poll mapper |
-| Order pasien uji tidak terkirim | RM tidak cocok / `tgl_permintaan` sebelum since | Samakan `no_rkm_medis` (termasuk nol di depan) dengan `MEDQLAB_ORDER_ONLY_RM` |
+| Order pasien uji tidak terkirim | RM tidak cocok / `tgl_permintaan`+`jam_permintaan` sebelum since | Samakan `no_rkm_medis` (termasuk nol di depan) dengan `MEDQLAB_ORDER_ONLY_RM`; cek `MEDQLAB_ORDER_SINCE` (tanggal atau tanggal+jam) |
 
 ```bash
 docker compose ps

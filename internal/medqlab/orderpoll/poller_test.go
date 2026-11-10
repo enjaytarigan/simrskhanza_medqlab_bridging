@@ -109,31 +109,36 @@ func TestNewEnabledSimrs(t *testing.T) {
 
 func TestClaimSQLWithoutRMFilter(t *testing.T) {
 	stale := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
-	query, args := claimSQL(nil, "2026-10-01", stale)
+	since := time.Date(2026, 10, 1, 14, 0, 0, 0, time.Local)
+	query, args := claimSQL(nil, since, stale)
 	if strings.Contains(query, "reg_periksa") || strings.Contains(query, "no_rkm_medis") {
 		t.Fatalf("unfiltered claim must not join RM: %s", query)
 	}
-	if len(args) != 3 {
+	if !strings.Contains(query, "pl.tgl_permintaan > ?") || !strings.Contains(query, "jam_permintaan") {
+		t.Fatalf("missing datetime cutoff: %s", query)
+	}
+	if len(args) != 5 {
 		t.Fatalf("args=%v", args)
 	}
-	if args[0] != "2026-10-01" || args[1] != claimLabNo {
+	if args[0] != "2026-10-01" || args[1] != "2026-10-01" || args[2] != "14:00:00" || args[3] != claimLabNo {
 		t.Fatalf("args=%v", args)
 	}
 }
 
 func TestClaimSQLWithRMAllowlist(t *testing.T) {
 	stale := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
-	query, args := claimSQL([]string{"000022", "000023"}, "2026-10-01", stale)
+	since := time.Date(2026, 10, 1, 0, 0, 0, 0, time.Local)
+	query, args := claimSQL([]string{"000022", "000023"}, since, stale)
 	if !strings.Contains(query, "INNER JOIN reg_periksa rp ON pl.no_rawat = rp.no_rawat") {
 		t.Fatalf("missing reg_periksa join: %s", query)
 	}
 	if !strings.Contains(query, "AND rp.no_rkm_medis IN (?, ?)") {
 		t.Fatalf("missing IN predicate: %s", query)
 	}
-	if len(args) != 5 {
+	if len(args) != 7 {
 		t.Fatalf("args=%v", args)
 	}
-	if args[3] != "000022" || args[4] != "000023" {
-		t.Fatalf("RM args=%v", args[3:])
+	if args[5] != "000022" || args[6] != "000023" {
+		t.Fatalf("RM args=%v", args[5:])
 	}
 }
