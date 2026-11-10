@@ -85,7 +85,7 @@ func (p *Poller) Run(ctx context.Context) {
 		rmLabel = "order_only_rm=" + strings.Join(p.onlyRM, ",")
 	}
 	log.Printf("[orderpoll] started interval=%s since=%s claim_timeout=%s %s",
-		p.interval, p.since.Format("2006-01-02"), p.claimTTL, rmLabel)
+		p.interval, p.since.Format("2006-01-02 15:04:05"), p.claimTTL, rmLabel)
 	p.tick(ctx)
 	ticker := time.NewTicker(p.interval)
 	defer ticker.Stop()
@@ -125,7 +125,7 @@ func (p *Poller) claimNext(ctx context.Context) (string, error) {
 	defer func() { _ = tx.Rollback() }()
 
 	staleBefore := time.Now().Add(-p.claimTTL)
-	query, args := claimSQL(p.onlyRM, p.since.Format("2006-01-02"), staleBefore)
+	query, args := claimSQL(p.onlyRM, p.since, staleBefore)
 	var noorder string
 	err = tx.QueryRowContext(ctx, query, args...).Scan(&noorder)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -157,10 +157,13 @@ ON DUPLICATE KEY UPDATE
 	return noorder, nil
 }
 
-func claimSQL(onlyRM []string, since string, staleBefore time.Time) (string, []any) {
+func claimSQL(onlyRM []string, since time.Time, staleBefore time.Time) (string, []any) {
 	join := ""
 	rmFilter := ""
-	args := []any{since, claimLabNo, staleBefore}
+	sinceDate := since.Format("2006-01-02")
+	sinceTime := since.Format("15:04:05")
+	// tgl_permintaan / jam_permintaan are separate Khanza columns.
+	args := []any{sinceDate, sinceDate, sinceTime, claimLabNo, staleBefore}
 	if len(onlyRM) > 0 {
 		join = "INNER JOIN reg_periksa rp ON pl.no_rawat = rp.no_rawat"
 		placeholders := make([]string, len(onlyRM))
@@ -175,7 +178,10 @@ SELECT pl.noorder
 FROM permintaan_lab pl
 %s
 LEFT JOIN lis_order_outbox o ON o.noorder = pl.noorder
-WHERE pl.tgl_permintaan >= ?
+WHERE (
+    pl.tgl_permintaan > ?
+    OR (pl.tgl_permintaan = ? AND IFNULL(NULLIF(pl.jam_permintaan,''), '00:00:00') >= ?)
+  )
   AND (
     o.noorder IS NULL
     OR (o.status = 'claimed' AND o.no_laboratorium = ? AND o.claimed_at <= ?)

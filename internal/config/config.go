@@ -104,14 +104,38 @@ func loadOrderPoll(cfg *Config) error {
 	}
 	sinceRaw := strings.TrimSpace(os.Getenv("MEDQLAB_ORDER_SINCE"))
 	if sinceRaw == "" {
-		return fmt.Errorf("MEDQLAB_ORDER_POLL requires MEDQLAB_ORDER_SINCE (yyyy-MM-dd)")
+		return fmt.Errorf("MEDQLAB_ORDER_POLL requires MEDQLAB_ORDER_SINCE (yyyy-MM-dd or yyyy-MM-dd HH:mm[:ss])")
 	}
-	since, err := time.ParseInLocation("2006-01-02", sinceRaw, cfg.Location)
+	since, err := ParseOrderPollSince(sinceRaw, cfg.Location)
 	if err != nil {
-		return fmt.Errorf("MEDQLAB_ORDER_SINCE must be yyyy-MM-dd: %w", err)
+		return err
 	}
 	cfg.OrderPollSince = since
 	return nil
+}
+
+// ParseOrderPollSince accepts date-only (start of day) or date+time in APP_TIMEZONE/TZ.
+// Formats: yyyy-MM-dd, yyyy-MM-dd HH:mm, yyyy-MM-dd HH:mm:ss (space or T separator).
+func ParseOrderPollSince(raw string, loc *time.Location) (time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if loc == nil {
+		loc = time.Local
+	}
+	raw = strings.Replace(raw, "T", " ", 1)
+	layouts := []string{
+		"2006-01-02 15:04:05",
+		"2006-01-02 15:04",
+		"2006-01-02",
+	}
+	var lastErr error
+	for _, layout := range layouts {
+		t, err := time.ParseInLocation(layout, raw, loc)
+		if err == nil {
+			return t, nil
+		}
+		lastErr = err
+	}
+	return time.Time{}, fmt.Errorf("MEDQLAB_ORDER_SINCE must be yyyy-MM-dd or yyyy-MM-dd HH:mm[:ss]: %w", lastErr)
 }
 
 func (c Config) Development() bool {
